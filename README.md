@@ -1,17 +1,14 @@
 ## Epo
 
-a blazing fast and minimal less than 300 lines. neovim lsp auto-completion plugin from [my pr](https://github.com/neovim/neovim/pull/24661)
+a blazing fast and minimal less than 300 lines. neovim lsp auto-completion plugin.
 
-need neovim nightly version.
+**Need neovim nightly**
+
 
 ## Usage
 
-invoke it on `on_attach` function like:
-
 ```lua
-on_attach = function(client, bufnr)
-    require('epo').auto_complete(client, bufnr, true or false)
-end
+require('epo').setup({})
 ```
 
 third param is fuzzy match enable.
