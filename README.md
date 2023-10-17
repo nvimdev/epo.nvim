@@ -1,6 +1,6 @@
 ## Epo
 
-a blazing fast neovim lsp auto-completion plugin from [my pr on neovim](https://github.com/neovim/neovim/pull/24661)
+a blazing fast and minimal less than 300 lines. neovim lsp auto-completion plugin from [my pr](https://github.com/neovim/neovim/pull/24661)
 
 need neovim nightly version.
 
