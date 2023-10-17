@@ -4,6 +4,7 @@ local protocol = require('vim.lsp.protocol')
 local lsp = vim.lsp
 local util = require('vim.lsp.util')
 local ms = protocol.Methods
+local group = api.nvim_create_augroup('Epo', { clear = true })
 
 local cmp_data = {}
 local match_fuzzy = false
@@ -165,62 +166,9 @@ local function completion_request(client, bufnr, trigger_kind, trigger_char)
   client.request(ms.textDocument_completion, params, completion_handler, bufnr)
 end
 
-_G.omnifunc = function(findstart, _)
-  local curbuf = api.nvim_get_current_buf()
-  local clients = lsp.get_clients({ bufnr = curbuf, method = ms.textDocument_completion })
-
-  if not cmp_data[curbuf] then
-    buf_data_init(curbuf)
-  end
-
-  if findstart then
-    cmp_data[curbuf].omni_pending = true
-    for _, client in ipairs(clients) do
-      completion_request(client, curbuf, 1, '')
-    end
-
-    local line = api.nvim_get_current_line()
-    local win = vim.api.nvim_get_current_win()
-    local pos = api.nvim_win_get_cursor(win)
-    local before_text = vfn.strpart(line, 0, pos[2])
-    local prefix = vfn.matchstr(before_text, '\\k\\+$')
-    cmp_data[curbuf]['cmp_prefix'] = prefix
-    return before_text:len() - prefix:len()
-  end
-
-  local count = 0
-  while cmp_data[curbuf].omni_pending and count < 1000 do
-    if vfn.complete_check() then
-      return -2
-    end
-    vim.uv.sleep(200)
-    count = count + 1
-  end
-
-  if cmp_data[curbuf].omni_pending then
-    return -2
-  end
-
-  local compitems = {}
-  local incomplete = false
-  for _, v in pairs(cmp_data[curbuf]['incomplete']) do
-    if v then
-      incomplete = true
-    end
-  end
-
-  if #cmp_data[curbuf]['cmp_prefix'] == 0 or incomplete then
-    return compitems
-  end
-
-  return vim.tbl_filter(function(item)
-    return vim.startwith(item, cmp_data[curbuf]['cmp_prefix'])
-  end, compitems)
-end
-
 local function complete_ondone(bufnr)
   api.nvim_create_autocmd('CompleteDone', {
-    group = api.nvim_create_augroup('lsp_auto_complete', { clear = false }),
+    group = group,
     buffer = bufnr,
     callback = function()
       local textedits = vim.tbl_get(
@@ -238,23 +186,59 @@ local function complete_ondone(bufnr)
   })
 end
 
-local function auto_complete(client, bufnr, fuzzy)
-  match_fuzzy = fuzzy or false
-  api.nvim_set_option_value('completeopt', 'menuone,noselect', { scope = 'global' })
-  api.nvim_create_autocmd('TextChangedI', {
-    group = api.nvim_create_augroup('lsp_auto_complete', { clear = false }),
+local function get_documentation(selected, param, bufnr)
+  lsp.buf_request(bufnr, ms.completionItem_resolve, param, function(_, result)
+    if not vim.tbl_get(result, 'documentation', 'value') then
+      return
+    end
+    local wininfo = api.nvim_complete_set_info(selected, result.documentation.value)
+    if not vim.tbl_isempty(wininfo) and wininfo.bufnr and api.nvim_buf_is_valid(wininfo.bufnr) then
+      vim.bo[wininfo.bufnr].filetype = 'markdown'
+    end
+  end)
+end
+
+local function show_info(cmp_info, bufnr)
+  if not cmp_info.items[cmp_info.selected + 1] then
+    return
+  end
+
+  local info = vim.tbl_get(cmp_info.items[cmp_info.selected + 1], 'info')
+  if not info or #info == 0 then
+    local param = vim.tbl_get(
+      cmp_info.items[cmp_info.selected + 1],
+      'user_data',
+      'nvim',
+      'lsp',
+      'completion_item'
+    )
+    get_documentation(cmp_info.selected, param, bufnr)
+  end
+end
+
+local function complete_changed(bufnr)
+  api.nvim_create_autocmd('CompleteChanged', {
     buffer = bufnr,
+    group = group,
     callback = function(args)
-      if
-        not lsp.get_clients({
-          bufnr = args.buf,
-          method = ms.textDocument_completion,
-          id = client.id,
-        })
-      then
+      local cmp_info = vfn.complete_info()
+      if cmp_info.selected == -1 then
         return
       end
 
+      local build = vim.version().build
+      if build:match('^g') or build:match('dirty') then
+        show_info(cmp_info, args.buf)
+      end
+    end,
+  })
+end
+
+local function auto_complete(client, bufnr)
+  api.nvim_create_autocmd('TextChangedI', {
+    group = group,
+    buffer = bufnr,
+    callback = function(args)
       local col = vfn.charcol('.')
       local line = api.nvim_get_current_line()
       if col == 0 or #line == 0 then
@@ -286,9 +270,47 @@ local function auto_complete(client, bufnr, fuzzy)
       completion_request(client, args.buf, triggerKind, triggerChar)
     end,
   })
-  complete_ondone()
+
+  complete_ondone(bufnr)
+
+  local build = vim.version().build
+  if build:match('^g') or build:match('dirty') then
+    api.nvim_set_option_value('completeopt', 'menuone,noinsert,popup', { scope = 'global' })
+  end
+  complete_changed(bufnr)
+end
+
+local function setup(opt)
+  match_fuzzy = opt.fuzzy or false
+
+  api.nvim_create_autocmd('LspAttach', {
+    group = group,
+    callback = function(args)
+      local clients = lsp.get_clients({
+        bufnr = args.buf,
+        method = ms.textDocument_completion,
+        id = args.data.client_id,
+      })
+
+      if #clients == 0 then
+        return
+      end
+
+      local created = api.nvim_get_autocmds({
+        event = { 'TextChangedI', 'CompleteChanged', 'CompleteDone' },
+        group = group,
+        buffer = args.buf,
+      })
+
+      if #created ~= 0 then
+        return
+      end
+
+      auto_complete(clients[1], args.buf)
+    end,
+  })
 end
 
 return {
-  auto_complete = auto_complete,
+  setup = setup,
 }
