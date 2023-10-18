@@ -343,13 +343,14 @@ local function auto_complete(client, bufnr)
 
   local build = vim.version().build
   if build:match('^g') or build:match('dirty') then
-    api.nvim_set_option_value('completeopt', 'menuone,noinsert,popup', { scope = 'global' })
+    api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
   end
   complete_changed(bufnr)
 end
 
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
+  api.nvim_set_option_value('completeopt', 'menu,menuone,noinsert', { scope = 'global' })
 
   api.nvim_create_autocmd('LspAttach', {
     group = group,
