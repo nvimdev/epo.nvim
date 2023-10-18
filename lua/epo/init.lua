@@ -47,6 +47,11 @@ local function make_valid_word(str_arg)
   return valid
 end
 
+local function lspkind(kind)
+  local k = protocol.CompletionItemKind[kind] or 'Unknown'
+  return k:lower():sub(1, 1)
+end
+
 local function completion_handler(_, result, ctx)
   local client = lsp.get_clients({ id = ctx.client_id })
   if not result or not client or not api.nvim_buf_is_valid(ctx.bufnr) then
@@ -79,7 +84,7 @@ local function completion_handler(_, result, ctx)
   for _, item in ipairs(compitems) do
     local entry = {
       abbr = item.label,
-      kind = protocol.CompletionItemKind[item.kind] or 'Unknown',
+      kind = lspkind(item.kind),
       icase = 1,
       dup = 1,
       empty = 1,
