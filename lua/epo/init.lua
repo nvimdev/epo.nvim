@@ -1,10 +1,10 @@
 local api, vfn = vim.api, vim.fn
-local snippet = require('vim.lsp._snippet_grammar')
 local protocol = require('vim.lsp.protocol')
 local lsp = vim.lsp
 local util = require('vim.lsp.util')
 local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
+local ns = api.nvim_create_namespace('Epo')
 
 local cmp_data = {}
 local match_fuzzy = false
@@ -12,18 +12,7 @@ local match_fuzzy = false
 local function buf_data_init(bufnr)
   cmp_data[bufnr] = {
     incomplete = {},
-    omni_pending = false,
   }
-end
-
-local function parse_snippet(input)
-  local ok, parsed = pcall(function()
-    return tostring(snippet.parse(input))
-  end)
-  if not ok then
-    return input
-  end
-  return parsed
 end
 
 local function charidx_without_comp(bufnr, pos)
@@ -43,6 +32,22 @@ local function charidx_without_comp(bufnr, pos)
     end
   end
   return pos.character
+end
+
+local function make_valid_word(str_arg)
+  local str = string.gsub(str_arg, '%$[0-9]+|%${%(\\%.%|[^}]+}', '')
+  str = string.gsub(str, '\\(.)', '%1')
+  local valid = string.match(str, "^[^\"'' (<{[%s\t\r\n]+")
+
+  if valid == nil or valid == '' then
+    return str
+  end
+
+  if string.match(valid, ':$') then
+    return string.sub(valid, 1, -3)
+  end
+
+  return valid
 end
 
 local function completion_handler(_, result, ctx)
@@ -71,6 +76,7 @@ local function completion_handler(_, result, ctx)
     return
   end
   local prefix, start_idx = unpack(retval)
+  cmp_data[ctx.bufnr].startidx = start_idx
   local startcol = start_idx + 1
   prefix = prefix:lower()
 
@@ -113,8 +119,8 @@ local function completion_handler(_, result, ctx)
     end
 
     local register = true
-    if lsp.protocol.InsertTextFormat[item.insertTextFormat] == 'snippet' then
-      entry.word = parse_snippet(item.textEdit.newText)
+    if lsp.protocol.InsertTextFormat[item.insertTextFormat] == 'Snippet' then
+      entry.word = make_valid_word(entry.word)
     elseif not cmp_data[ctx.bufnr].incomplete then
       if #prefix ~= 0 then
         local filter = item.filterText or entry.word
@@ -136,25 +142,19 @@ local function completion_handler(_, result, ctx)
         entry.info = item.info
       end
 
-      entry.sortText = item.sortText or item.label
+      entry.score = item.sortText or item.label
       entrys[#entrys + 1] = entry
     end
   end
 
   table.sort(entrys, function(a, b)
-    return (a.sortText or a.label) < (b.sortText or b.label)
+    return a.score < b.score
   end)
 
-  if not cmp_data[ctx.bufnr].omni_pending then
-    local mode = api.nvim_get_mode()['mode']
-    if mode == 'i' or mode == 'ic' then
-      vfn.complete(startcol, entrys)
-    end
-    return
+  local mode = api.nvim_get_mode()['mode']
+  if mode == 'i' or mode == 'ic' then
+    vfn.complete(startcol, entrys)
   end
-
-  cmp_data[ctx.bufnr].omni_pending = false
-  cmp_data[ctx.bufnr].compitems = vim.list_extend(cmp_data[ctx.bufnr].compitems or {}, entrys)
 end
 
 local function completion_request(client, bufnr, trigger_kind, trigger_char)
@@ -171,14 +171,10 @@ local function complete_ondone(bufnr)
     group = group,
     buffer = bufnr,
     callback = function()
-      local textedits = vim.tbl_get(
-        vim.v.completed_item,
-        'user_data',
-        'nvim',
-        'lsp',
-        'completion_item',
-        'additionalTextEdits'
-      )
+      local item = vim.v.completed_item
+
+      local textedits =
+        vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
       if textedits then
         lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
       end
@@ -216,16 +212,89 @@ local function show_info(cmp_info, bufnr)
   end
 end
 
+local function delete_mark(bufnr)
+  bufnr = bufnr or api.nvim_get_current_buf()
+  if cmp_data[bufnr] and cmp_data[bufnr].vt_id and vfn.pumvisible() == 1 then
+    pcall(api.nvim_buf_del_extmark, bufnr, ns, cmp_data[bufnr].vt_id)
+  end
+end
+
+local function insert_level(bufnr)
+  api.nvim_create_autocmd('InsertLeave', {
+    group = group,
+    buffer = bufnr,
+    once = true,
+    callback = function(args)
+      delete_mark(args.buf)
+    end,
+  })
+end
+
+local function suggest(items, bufnr)
+  delete_mark()
+  local curline = api.nvim_get_current_line()
+  local pos = api.nvim_win_get_cursor(0)
+  local vt_pos = curline ~= pos[2] and 'inline' or 'eol'
+  local line = api.nvim_get_current_line()
+  local typed = line:sub(cmp_data[bufnr].startidx, pos[2])
+  -- if not starts with there mabye have a triggerCharacters in start of typed
+  if not vim.startswith(items[1].word, typed:sub(1, 1)) then
+    typed = typed:sub(2, #typed)
+  end
+
+  local t = vim.tbl_filter(function(i)
+    return vim.startswith(i.word, typed)
+  end, items)
+
+  if #t == 0 or t[1].kind == 'Snippet' then
+    return
+  end
+  local text = t[1].word:sub(#typed + 1, #t[1].word)
+  cmp_data[bufnr].suggest = text
+  cmp_data[bufnr].vt_id = api.nvim_buf_set_extmark(bufnr, ns, pos[1] - 1, pos[2], {
+    virt_text = { { text, 'Comment' } },
+    virt_text_pos = vt_pos,
+    hl_mode = 'combine',
+  })
+end
+
+local function accept_suggest()
+  local bufnr = api.nvim_get_current_buf()
+  if not cmp_data[bufnr] then
+    return
+  end
+  local mark = api.nvim_buf_get_extmark_by_id(bufnr, ns, cmp_data[bufnr].vt_id, {})
+  if not mark or #mark == 0 then
+    return
+  end
+  local pos = api.nvim_win_get_cursor(0)
+  local new = cmp_data[bufnr].suggest
+  vim.schedule(function()
+    api.nvim_buf_set_text(bufnr, pos[1] - 1, pos[2], pos[1] - 1, pos[2], { new })
+    api.nvim_win_set_cursor(0, { pos[1], pos[2] + #new })
+    delete_mark()
+  end)
+end
+
 local function complete_changed(bufnr)
   api.nvim_create_autocmd('CompleteChanged', {
     buffer = bufnr,
     group = group,
     callback = function(args)
       local cmp_info = vfn.complete_info()
+      if #cmp_info.items == 0 then
+        return
+      end
+      table.sort(cmp_info.items, function(a, b)
+        local comp_a = vim.tbl_get(a, 'user_data', 'nvim', 'lsp', 'completion_item')
+        local comp_b = vim.tbl_get(b, 'user_data', 'nvim', 'lsp', 'completion_item')
+        return (comp_a.sortText or comp_a.label) < (comp_b.sortText or comp_b.label)
+      end)
+      suggest(cmp_info.items, args.buf)
+
       if cmp_info.selected == -1 then
         return
       end
-
       local build = vim.version().build
       if build:match('^g') or build:match('dirty') then
         show_info(cmp_info, args.buf)
@@ -244,7 +313,6 @@ local function auto_complete(client, bufnr)
       if col == 0 or #line == 0 then
         return
       end
-
       local triggerKind = lsp.protocol.CompletionTriggerKind.Invoked
       local triggerChar = ''
 
@@ -286,6 +354,10 @@ local function setup(opt)
   api.nvim_create_autocmd('LspAttach', {
     group = group,
     callback = function(args)
+      if vfn.complete_info().pum_visible == 0 then
+        delete_mark(args.buf)
+      end
+
       local clients = lsp.get_clients({
         bufnr = args.buf,
         method = ms.textDocument_completion,
@@ -307,10 +379,12 @@ local function setup(opt)
       end
 
       auto_complete(clients[1], args.buf)
+      insert_level(args.buf)
     end,
   })
 end
 
 return {
   setup = setup,
+  accept_suggest = accept_suggest,
 }
