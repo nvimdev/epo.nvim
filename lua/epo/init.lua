@@ -122,6 +122,7 @@ local function completion_handler(_, result, ctx)
     local register = true
     if lsp.protocol.InsertTextFormat[item.insertTextFormat] == 'Snippet' then
       entry.word = make_valid_word(entry.word)
+      -- entry.word = util.parse_snippet(entry.word)
     elseif not cmp_data[ctx.bufnr].incomplete then
       if #prefix ~= 0 then
         local filter = item.filterText or entry.word
@@ -171,8 +172,14 @@ local function complete_ondone(bufnr)
   api.nvim_create_autocmd('CompleteDone', {
     group = group,
     buffer = bufnr,
-    callback = function()
+    callback = function(args)
       local item = vim.v.completed_item
+      local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
+      if item.kind == 's' and vim.snippet then
+        local before_col = api.nvim_win_get_cursor(0)[2] - 1
+        local snippet = completion_item.insertText:sub(before_col - cmp_data[args.buf].startidx + 2)
+        vim.snippet.expand(snippet)
+      end
 
       local textedits =
         vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
@@ -273,6 +280,29 @@ local function auto_complete(client, bufnr)
   complete_changed(bufnr)
 end
 
+local function register_cap()
+  return {
+    textDocument = {
+      completion = {
+        completionItem = {
+          snippetSupport = vim.snippet and true or false,
+          resolveSupport = {
+            properties = { 'edit', 'documentation', 'detail', 'additionalTextEdits' },
+          },
+        },
+        completionList = {
+          itemDefaults = {
+            'editRange',
+            'insertTextFormat',
+            'insertTextMode',
+            'data',
+          },
+        },
+      },
+    },
+  }
+end
+
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   api.nvim_create_autocmd('LspAttach', {
@@ -301,4 +331,5 @@ end
 
 return {
   setup = setup,
+  register_cap = register_cap,
 }
