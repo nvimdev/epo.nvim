@@ -8,7 +8,10 @@ a blazing fast and minimal less than 300 lines. neovim lsp auto-completion plugi
 ## Usage
 
 ```lua
-require('epo').setup({})
+require('epo').setup({
+    fuzzy = false,
+    debounce = 100,
+})
 ```
 
 register capabilities for `vim.snippet`
