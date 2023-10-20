@@ -1,15 +1,18 @@
 local api, vfn = vim.api, vim.fn
 local protocol = require('vim.lsp.protocol')
+local uv = vim.uv
 local lsp = vim.lsp
 local util = require('vim.lsp.util')
 local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
 local match_fuzzy = false
+local debouce_time = 100
 local cmp_data = {}
 
 local function buf_data_init(bufnr)
   cmp_data[bufnr] = {
     incomplete = {},
+    timer = nil,
   }
 end
 
@@ -237,6 +240,23 @@ local function complete_changed(bufnr)
   })
 end
 
+local function debounce(client, bufnr, triggerKind, triggerChar)
+  if not cmp_data[bufnr] then
+    return
+  end
+  if cmp_data[bufnr].timer and cmp_data[bufnr].timer:is_active() then
+    cmp_data[bufnr].timer:close()
+    cmp_data[bufnr].timer:stop()
+    cmp_data[bufnr].timer = nil
+  end
+  cmp_data[bufnr].timer = uv.new_timer()
+  cmp_data[bufnr].timer:start(debouce_time, 0, function()
+    vim.schedule(function()
+      completion_request(client, bufnr, triggerKind, triggerChar)
+    end)
+  end)
+end
+
 local function auto_complete(client, bufnr)
   api.nvim_create_autocmd('TextChangedI', {
     group = group,
@@ -269,9 +289,10 @@ local function auto_complete(client, bufnr)
         buf_data_init(args.buf)
       end
 
-      completion_request(client, args.buf, triggerKind, triggerChar)
+      debounce(client, args.buf, triggerKind, triggerChar)
     end,
   })
+
   complete_ondone(bufnr)
   local build = vim.version().build
   if build:match('^g') or build:match('dirty') then
@@ -305,6 +326,8 @@ end
 
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
+  debouce_time = opt.debouce_time or 100
+
   api.nvim_create_autocmd('LspAttach', {
     group = group,
     callback = function(args)
