@@ -6,7 +6,7 @@ local util = require('vim.lsp.util')
 local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
 local match_fuzzy = false
-local debouce_time = 100
+local debounce_time = 100
 local cmp_data = {}
 
 local function buf_data_init(bufnr)
@@ -250,7 +250,7 @@ local function debounce(client, bufnr, triggerKind, triggerChar)
     cmp_data[bufnr].timer = nil
   end
   cmp_data[bufnr].timer = uv.new_timer()
-  cmp_data[bufnr].timer:start(debouce_time, 0, function()
+  cmp_data[bufnr].timer:start(debounce_time, 0, function()
     vim.schedule(function()
       completion_request(client, bufnr, triggerKind, triggerChar)
     end)
@@ -326,7 +326,7 @@ end
 
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
-  debouce_time = opt.debouce_time or 100
+  debounce_time = opt.debounce_time or 50
 
   api.nvim_create_autocmd('LspAttach', {
     group = group,
