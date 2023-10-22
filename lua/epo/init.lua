@@ -5,6 +5,7 @@ local lsp = vim.lsp
 local util = require('vim.lsp.util')
 local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
+local ns = api.nvim_create_namespace('Epo')
 local match_fuzzy = false
 local debounce_time = 100
 local signature = true
@@ -184,25 +185,46 @@ local function signature_help(client, bufnr)
     local ft = vim.bo[ctx.bufnr].filetype
     local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
     ---@diagnostic disable-next-line: param-type-mismatch
-    if vim.tbl_isempty(lines) then
+    if not lines or vim.tbl_isempty(lines) then
       return
     end
     fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
       close_events = {},
       border = 'rounded',
     })
+    vim.bo[fbuf].syntax = 'on'
+
+    local hi = 'LspSignatureActiveParameter'
+    local line = vim.startswith(lines[1], '```') and 1 or 0
     if hl then
-      api.nvim_buf_add_highlight(fbuf, -1, 'LspSignatureActiveParameter', 0, unpack(hl))
+      api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(hl))
     end
 
+    local data = result.signatures[1] or result.signature
+    local id = api.nvim_create_autocmd('ModeChanged', {
+      buffer = ctx.bufnr,
+      group = group,
+      callback = function(args)
+        if not data.parameters or not data.parameters then
+          return
+        end
+        ---@diagnostic disable-next-line: unused-local
+        local index = vim.snippet._session.current_tabstop.index
+        if index and data.parameters[index] and data.parameters[index].label then
+          api.nvim_buf_clear_namespace(fbuf, ns, line, line + 1)
+          api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(data.parameters[index].label))
+        end
+      end,
+    })
     api.nvim_create_autocmd('CursorMovedI', {
       buffer = ctx.bufnr,
       group = group,
       callback = function(args)
-        if not vim.snippet.jumpable(1) and not vim.snippet.jumpable(-1) then
+        if not vim.snippet.active() then
           pcall(api.nvim_win_close, fwin, true)
           fwin = nil
           api.nvim_del_autocmd(args.id)
+          api.nvim_del_autocmd(id)
         end
       end,
     })
