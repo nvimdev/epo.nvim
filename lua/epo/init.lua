@@ -7,6 +7,7 @@ local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
 local match_fuzzy = false
 local debounce_time = 100
+local signature = true
 local cmp_data = {}
 
 local function buf_data_init(bufnr)
@@ -171,17 +172,85 @@ local function completion_request(client, bufnr, trigger_kind, trigger_char)
   client.request(ms.textDocument_completion, params, completion_handler, bufnr)
 end
 
+local function signature_help(client, bufnr)
+  local params = util.make_position_params()
+  local fwin, fbuf
+  client.request(ms.textDocument_signatureHelp, params, function(err, result, ctx)
+    if err or not api.nvim_buf_is_valid(ctx.bufnr) then
+      return
+    end
+    local triggers =
+      vim.tbl_get(client.server_capabilities, 'signatureHelpProvider', 'triggerCharacters')
+    local ft = vim.bo[ctx.bufnr].filetype
+    local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
+    ---@diagnostic disable-next-line: param-type-mismatch
+    if vim.tbl_isempty(lines) then
+      return
+    end
+    fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
+      close_events = {},
+      border = 'rounded',
+    })
+    if hl then
+      api.nvim_buf_add_highlight(fbuf, -1, 'LspSignatureActiveParameter', 0, unpack(hl))
+    end
+
+    api.nvim_create_autocmd('CursorMovedI', {
+      buffer = ctx.bufnr,
+      group = group,
+      callback = function(args)
+        if not vim.snippet.jumpable(1) and not vim.snippet.jumpable(-1) then
+          pcall(api.nvim_win_close, fwin, true)
+          fwin = nil
+          api.nvim_del_autocmd(args.id)
+        end
+      end,
+    })
+  end, bufnr)
+end
+
 local function complete_ondone(bufnr)
   api.nvim_create_autocmd('CompleteDone', {
     group = group,
     buffer = bufnr,
     callback = function(args)
       local item = vim.v.completed_item
+      if not item or vim.tbl_isempty(item) then
+        return
+      end
       local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
-      if item.kind == 's' and vim.snippet then
+      local insertText = vim.tbl_get(completion_item, 'insertText')
+      local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
+      if
+        completion_item
+        and insertText
+        and insertTextFormat == lsp.protocol.InsertTextFormat.Snippet
+        and vim.snippet
+      then
         local before_col = api.nvim_win_get_cursor(0)[2] - 1
-        local snippet = completion_item.insertText:sub(before_col - cmp_data[args.buf].startidx + 2)
-        vim.snippet.expand(snippet)
+        local offset_snip = insertText:sub(before_col - cmp_data[args.buf].startidx + 2)
+        vim.snippet.expand(offset_snip)
+      end
+
+      if signature then
+        local clients =
+          vim.lsp.get_clients({ bufnr = args.buf, method = ms.textDocument_signatureHelp })
+        if not clients or #clients == 0 then
+          return
+        end
+
+        local line = api.nvim_get_current_line()
+        local col = vfn.charcol('.')
+        local char = line:sub(col - 1, col - 1)
+
+        if
+          vim.tbl_contains(
+            clients[1].server_capabilities.signatureHelpProvider.triggerCharacters,
+            char
+          )
+        then
+          signature_help(clients[1], args.buf)
+        end
       end
 
       local textedits =
@@ -327,6 +396,11 @@ end
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
+  signature = opt.signature or true
+
+  if not vim.snippet then
+    vim.notify('neovim version a bit old', vim.logs.level.WARN)
+  end
 
   api.nvim_create_autocmd('LspAttach', {
     group = group,
