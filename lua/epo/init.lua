@@ -204,11 +204,12 @@ local function signature_help(client, bufnr)
     local id = api.nvim_create_autocmd('ModeChanged', {
       buffer = ctx.bufnr,
       group = group,
-      callback = function(args)
-        if not data.parameters or not data.parameters then
+      callback = function()
+        ---@diagnostic disable-next-line: invisible
+        if not data.parameters or not data.parameters or not vim.snippet._session then
           return
         end
-        ---@diagnostic disable-next-line: unused-local
+        ---@diagnostic disable-next-line: invisible
         local index = vim.snippet._session.current_tabstop.index
         if index and data.parameters[index] and data.parameters[index].label then
           api.nvim_buf_clear_namespace(fbuf, ns, line, line + 1)
