@@ -173,7 +173,7 @@ local function completion_request(client, bufnr, trigger_kind, trigger_char)
   client.request(ms.textDocument_completion, params, completion_handler, bufnr)
 end
 
-local function signature_help(client, bufnr)
+local function signature_help(client, bufnr, lnum)
   local params = util.make_position_params()
   local fwin, fbuf
   client.request(ms.textDocument_signatureHelp, params, function(err, result, ctx)
@@ -219,13 +219,14 @@ local function signature_help(client, bufnr)
       end,
     })
 
-    api.nvim_create_autocmd('InsertLeave', {
+    api.nvim_create_autocmd({ 'CursorMovedI', 'CursorMoved' }, {
       buffer = ctx.bufnr,
       group = g,
       callback = function()
-        if api.nvim_win_is_valid(fwin) then
+        local curline = api.nvim_win_get_cursor(0)[1]
+        if curline ~= lnum and api.nvim_win_is_valid(fwin) then
           api.nvim_win_close(fwin, true)
-          fwin = nil
+          api.nvim_del_augroup_by_id(g)
         end
       end,
     })
@@ -253,11 +254,13 @@ local function complete_ondone(bufnr)
         return
       end
       local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
+      if not completion_item then
+        return
+      end
       local insertText = vim.tbl_get(completion_item, 'insertText')
       local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
       if
-        completion_item
-        and insertText
+        insertText
         and insertTextFormat == lsp.protocol.InsertTextFormat.Snippet
         and vim.snippet
       then
@@ -272,18 +275,16 @@ local function complete_ondone(bufnr)
         if not clients or #clients == 0 then
           return
         end
-
         local line = api.nvim_get_current_line()
         local col = vfn.charcol('.')
         local char = line:sub(col - 1, col - 1)
-
         if
           vim.tbl_contains(
             clients[1].server_capabilities.signatureHelpProvider.triggerCharacters,
             char
           )
         then
-          signature_help(clients[1], args.buf)
+          signature_help(clients[1], args.buf, api.nvim_win_get_cursor(0)[1])
         end
       end
 
