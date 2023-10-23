@@ -9,6 +9,9 @@ local ns = api.nvim_create_namespace('Epo')
 local match_fuzzy = false
 local signature = false
 local debounce_time = 100
+-- Ctrl-Y will trigger TextChangedI again
+-- avoid completion redisplay add a status check
+local disable = false
 local cmp_data = {}
 
 local function buf_data_init(bufnr)
@@ -55,6 +58,185 @@ end
 local function lspkind(kind)
   local k = protocol.CompletionItemKind[kind] or 'Unknown'
   return k:lower():sub(1, 1)
+end
+
+local function get_documentation(selected, param, bufnr)
+  lsp.buf_request(bufnr, ms.completionItem_resolve, param, function(_, result)
+    if not vim.tbl_get(result, 'documentation', 'value') then
+      return
+    end
+    local wininfo = api.nvim_complete_set_info(selected, result.documentation.value)
+    if not vim.tbl_isempty(wininfo) and wininfo.bufnr and api.nvim_buf_is_valid(wininfo.bufnr) then
+      vim.bo[wininfo.bufnr].filetype = 'markdown'
+    end
+  end)
+end
+
+local function show_info(cmp_info, bufnr)
+  if not cmp_info.items[cmp_info.selected + 1] then
+    return
+  end
+  local info = vim.tbl_get(cmp_info.items[cmp_info.selected + 1], 'info')
+  if not info or #info == 0 then
+    local param = vim.tbl_get(
+      cmp_info.items[cmp_info.selected + 1],
+      'user_data',
+      'nvim',
+      'lsp',
+      'completion_item'
+    )
+    get_documentation(cmp_info.selected, param, bufnr)
+  end
+end
+
+local function complete_changed(bufnr)
+  api.nvim_create_autocmd('CompleteChanged', {
+    buffer = bufnr,
+    group = group,
+    once = true,
+    callback = function(args)
+      local cmp_info = vfn.complete_info()
+      if cmp_info.selected == -1 then
+        return
+      end
+      local build = vim.version().build
+      if build:match('^g') or build:match('dirty') then
+        show_info(cmp_info, args.buf)
+      end
+    end,
+  })
+end
+
+local function signature_help(client, bufnr, lnum)
+  local params = util.make_position_params()
+  local fwin, fbuf
+  client.request(ms.textDocument_signatureHelp, params, function(err, result, ctx)
+    if err or not api.nvim_buf_is_valid(ctx.bufnr) then
+      return
+    end
+    local triggers =
+      vim.tbl_get(client.server_capabilities, 'signatureHelpProvider', 'triggerCharacters')
+    local ft = vim.bo[ctx.bufnr].filetype
+    local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
+    ---@diagnostic disable-next-line: param-type-mismatch
+    if not lines or vim.tbl_isempty(lines) then
+      return
+    end
+    fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
+      close_events = {},
+      border = 'rounded',
+    })
+    vim.bo[fbuf].syntax = 'on'
+
+    local hi = 'LspSignatureActiveParameter'
+    local line = vim.startswith(lines[1], '```') and 1 or 0
+    if hl then
+      api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(hl))
+    end
+
+    local g = api.nvim_create_augroup('epo_with_signature_' .. ctx.bufnr, { clear = true })
+    local data = result.signatures[1] or result.signature
+    api.nvim_create_autocmd('ModeChanged', {
+      buffer = ctx.bufnr,
+      group = g,
+      callback = function()
+        ---@diagnostic disable-next-line: invisible
+        if not data.parameters or not data.parameters or not vim.snippet._session then
+          return
+        end
+        ---@diagnostic disable-next-line: invisible
+        local index = vim.snippet._session.current_tabstop.index
+        if index and data.parameters[index] and data.parameters[index].label then
+          api.nvim_buf_clear_namespace(fbuf, ns, line, line + 1)
+          api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(data.parameters[index].label))
+        end
+      end,
+    })
+
+    api.nvim_create_autocmd({ 'CursorMovedI', 'CursorMoved' }, {
+      buffer = ctx.bufnr,
+      group = g,
+      callback = function()
+        local curline = api.nvim_win_get_cursor(0)[1]
+        if curline ~= lnum and api.nvim_win_is_valid(fwin) then
+          api.nvim_win_close(fwin, true)
+          api.nvim_del_augroup_by_id(g)
+        end
+      end,
+    })
+
+    ---@diagnostic disable-next-line: invisible
+    local count = vim.tbl_count(vim.snippet._session.tabstops)
+    api.nvim_create_autocmd('CursorMovedI', {
+      buffer = ctx.bufnr,
+      group = g,
+      callback = function()
+        ---@diagnostic disable-next-line: invisible
+        local curindex = vim.snippet._session.current_tabstop.index + 1
+        if curindex == count then
+          pcall(api.nvim_win_close, fwin, true)
+          api.nvim_del_augroup_by_id(g)
+        end
+      end,
+    })
+  end, bufnr)
+end
+
+local function complete_ondone(bufnr)
+  api.nvim_create_autocmd('CompleteDone', {
+    group = group,
+    buffer = bufnr,
+    once = true,
+    callback = function(args)
+      if not disable then
+        disable = true
+      end
+      local item = vim.v.completed_item
+      if not item or vim.tbl_isempty(item) then
+        return
+      end
+      local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
+      if not completion_item then
+        return
+      end
+      local insertText = vim.tbl_get(completion_item, 'insertText')
+      local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
+      local lnum, col = unpack(api.nvim_win_get_cursor(0))
+      if
+        insertText
+        and insertTextFormat == lsp.protocol.InsertTextFormat.Snippet
+        and vim.snippet
+      then
+        local offset_snip = insertText:sub(col - cmp_data[args.buf].startidx + 1)
+        vim.snippet.expand(offset_snip)
+      end
+
+      if signature then
+        local clients =
+          vim.lsp.get_clients({ bufnr = args.buf, method = ms.textDocument_signatureHelp })
+        if not clients or #clients == 0 then
+          return
+        end
+        local line = api.nvim_get_current_line()
+        local char = line:sub(col + 1, col + 1)
+        if
+          vim.tbl_contains(
+            clients[1].server_capabilities.signatureHelpProvider.triggerCharacters,
+            char
+          )
+        then
+          signature_help(clients[1], args.buf, lnum)
+        end
+      end
+
+      local textedits =
+        vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
+      if textedits then
+        lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
+      end
+      cmp_data[args.buf] = nil
+    end,
+  })
 end
 
 local function completion_handler(_, result, ctx)
@@ -161,6 +343,8 @@ local function completion_handler(_, result, ctx)
   local mode = api.nvim_get_mode()['mode']
   if mode == 'i' or mode == 'ic' then
     vfn.complete(startcol, entrys)
+    complete_ondone(ctx.bufnr)
+    complete_changed(ctx.bufnr)
   end
 end
 
@@ -171,181 +355,6 @@ local function completion_request(client, bufnr, trigger_kind, trigger_char)
     triggerCharacter = trigger_char,
   }
   client.request(ms.textDocument_completion, params, completion_handler, bufnr)
-end
-
-local function signature_help(client, bufnr, lnum)
-  local params = util.make_position_params()
-  local fwin, fbuf
-  client.request(ms.textDocument_signatureHelp, params, function(err, result, ctx)
-    if err or not api.nvim_buf_is_valid(ctx.bufnr) then
-      return
-    end
-    local triggers =
-      vim.tbl_get(client.server_capabilities, 'signatureHelpProvider', 'triggerCharacters')
-    local ft = vim.bo[ctx.bufnr].filetype
-    local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
-    ---@diagnostic disable-next-line: param-type-mismatch
-    if not lines or vim.tbl_isempty(lines) then
-      return
-    end
-    fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
-      close_events = {},
-      border = 'rounded',
-    })
-    vim.bo[fbuf].syntax = 'on'
-
-    local hi = 'LspSignatureActiveParameter'
-    local line = vim.startswith(lines[1], '```') and 1 or 0
-    if hl then
-      api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(hl))
-    end
-
-    local g = api.nvim_create_augroup('epo_with_signature_' .. ctx.bufnr, { clear = true })
-    local data = result.signatures[1] or result.signature
-    api.nvim_create_autocmd('ModeChanged', {
-      buffer = ctx.bufnr,
-      group = g,
-      callback = function()
-        ---@diagnostic disable-next-line: invisible
-        if not data.parameters or not data.parameters or not vim.snippet._session then
-          return
-        end
-        ---@diagnostic disable-next-line: invisible
-        local index = vim.snippet._session.current_tabstop.index
-        if index and data.parameters[index] and data.parameters[index].label then
-          api.nvim_buf_clear_namespace(fbuf, ns, line, line + 1)
-          api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(data.parameters[index].label))
-        end
-      end,
-    })
-
-    api.nvim_create_autocmd({ 'CursorMovedI', 'CursorMoved' }, {
-      buffer = ctx.bufnr,
-      group = g,
-      callback = function()
-        local curline = api.nvim_win_get_cursor(0)[1]
-        if curline ~= lnum and api.nvim_win_is_valid(fwin) then
-          api.nvim_win_close(fwin, true)
-          api.nvim_del_augroup_by_id(g)
-        end
-      end,
-    })
-
-    ---@diagnostic disable-next-line: invisible
-    local count = vim.tbl_count(vim.snippet._session.tabstops)
-    api.nvim_create_autocmd('CursorMovedI', {
-      buffer = ctx.bufnr,
-      group = g,
-      callback = function()
-        ---@diagnostic disable-next-line: invisible
-        local curindex = vim.snippet._session.current_tabstop.index + 1
-        if curindex == count then
-          pcall(api.nvim_win_close, fwin, true)
-          api.nvim_del_augroup_by_id(g)
-        end
-      end,
-    })
-  end, bufnr)
-end
-
-local function complete_ondone(bufnr)
-  api.nvim_create_autocmd('CompleteDone', {
-    group = group,
-    buffer = bufnr,
-    callback = function(args)
-      local item = vim.v.completed_item
-      if not item or vim.tbl_isempty(item) then
-        return
-      end
-      local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
-      if not completion_item then
-        return
-      end
-      local insertText = vim.tbl_get(completion_item, 'insertText')
-      local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
-      local lnum, col = unpack(api.nvim_win_get_cursor(0))
-      if
-        insertText
-        and insertTextFormat == lsp.protocol.InsertTextFormat.Snippet
-        and vim.snippet
-      then
-        local offset_snip = insertText:sub(col - cmp_data[args.buf].startidx + 1)
-        vim.snippet.expand(offset_snip)
-      end
-
-      if signature then
-        local clients =
-          vim.lsp.get_clients({ bufnr = args.buf, method = ms.textDocument_signatureHelp })
-        if not clients or #clients == 0 then
-          return
-        end
-        local line = api.nvim_get_current_line()
-        local char = line:sub(col + 1, col + 1)
-        if
-          vim.tbl_contains(
-            clients[1].server_capabilities.signatureHelpProvider.triggerCharacters,
-            char
-          )
-        then
-          signature_help(clients[1], args.buf, lnum)
-        end
-      end
-
-      local textedits =
-        vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
-      if textedits then
-        lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
-      end
-      cmp_data[args.buf] = nil
-    end,
-  })
-end
-
-local function get_documentation(selected, param, bufnr)
-  lsp.buf_request(bufnr, ms.completionItem_resolve, param, function(_, result)
-    if not vim.tbl_get(result, 'documentation', 'value') then
-      return
-    end
-    local wininfo = api.nvim_complete_set_info(selected, result.documentation.value)
-    if not vim.tbl_isempty(wininfo) and wininfo.bufnr and api.nvim_buf_is_valid(wininfo.bufnr) then
-      vim.bo[wininfo.bufnr].filetype = 'markdown'
-    end
-  end)
-end
-
-local function show_info(cmp_info, bufnr)
-  if not cmp_info.items[cmp_info.selected + 1] then
-    return
-  end
-
-  local info = vim.tbl_get(cmp_info.items[cmp_info.selected + 1], 'info')
-  if not info or #info == 0 then
-    local param = vim.tbl_get(
-      cmp_info.items[cmp_info.selected + 1],
-      'user_data',
-      'nvim',
-      'lsp',
-      'completion_item'
-    )
-    get_documentation(cmp_info.selected, param, bufnr)
-  end
-end
-
-local function complete_changed(bufnr)
-  api.nvim_create_autocmd('CompleteChanged', {
-    buffer = bufnr,
-    group = group,
-    callback = function(args)
-      local cmp_info = vfn.complete_info()
-      if cmp_info.selected == -1 then
-        return
-      end
-      local build = vim.version().build
-      if build:match('^g') or build:match('dirty') then
-        show_info(cmp_info, args.buf)
-      end
-    end,
-  })
 end
 
 local function debounce(client, bufnr, triggerKind, triggerChar)
@@ -370,6 +379,10 @@ local function auto_complete(client, bufnr)
     group = group,
     buffer = bufnr,
     callback = function(args)
+      if disable then
+        disable = false
+        return
+      end
       local col = vfn.charcol('.')
       local line = api.nvim_get_current_line()
       if col == 0 or #line == 0 then
@@ -377,36 +390,30 @@ local function auto_complete(client, bufnr)
       end
       local triggerKind = lsp.protocol.CompletionTriggerKind.Invoked
       local triggerChar = ''
-
-      local ok, val = pcall(api.nvim_eval, ([['%s' !~ '\k']]):format(line:sub(col - 1, col - 1)))
+      local char = line:sub(col - 1, col - 1)
+      local ok, val = pcall(api.nvim_eval, ([['%s' !~ '\k']]):format(char))
       if not ok then
         return
       end
-
       if val ~= 0 then
         local triggerCharacters = client.server_capabilities.completionProvider.triggerCharacters
           or {}
-        if not vim.tbl_contains(triggerCharacters, line:sub(col - 1, col - 1)) then
+        if not vim.tbl_contains(triggerCharacters, char) then
           return
         end
         triggerKind = lsp.protocol.CompletionTriggerKind.TriggerCharacter
-        triggerChar = line:sub(col - 1, col - 1)
+        triggerChar = char
       end
-
       if not cmp_data[args.buf] then
         buf_data_init(args.buf)
       end
-
       debounce(client, args.buf, triggerKind, triggerChar)
     end,
   })
-
-  complete_ondone(bufnr)
   local build = vim.version().build
   if build:match('^g') or build:match('dirty') then
     api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
   end
-  complete_changed(bufnr)
 end
 
 local function register_cap()
@@ -441,6 +448,7 @@ local function setup(opt)
     vim.notify('neovim version a bit old', vim.logs.level.WARN)
   end
 
+  -- Usually I just use one client for completion so just one
   api.nvim_create_autocmd('LspAttach', {
     group = group,
     callback = function(args)
@@ -453,7 +461,7 @@ local function setup(opt)
         return
       end
       local created = api.nvim_get_autocmds({
-        event = { 'TextChangedI', 'CompleteChanged', 'CompleteDone' },
+        event = { 'TextChangedI' },
         group = group,
         buffer = args.buf,
       })
