@@ -259,13 +259,13 @@ local function complete_ondone(bufnr)
       end
       local insertText = vim.tbl_get(completion_item, 'insertText')
       local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
+      local lnum, col = unpack(api.nvim_win_get_cursor(0))
       if
         insertText
         and insertTextFormat == lsp.protocol.InsertTextFormat.Snippet
         and vim.snippet
       then
-        local before_col = api.nvim_win_get_cursor(0)[2] - 1
-        local offset_snip = insertText:sub(before_col - cmp_data[args.buf].startidx + 2)
+        local offset_snip = insertText:sub(col - cmp_data[args.buf].startidx + 1)
         vim.snippet.expand(offset_snip)
       end
 
@@ -276,15 +276,14 @@ local function complete_ondone(bufnr)
           return
         end
         local line = api.nvim_get_current_line()
-        local col = vfn.charcol('.')
-        local char = line:sub(col - 1, col - 1)
+        local char = line:sub(col + 1, col + 1)
         if
           vim.tbl_contains(
             clients[1].server_capabilities.signatureHelpProvider.triggerCharacters,
             char
           )
         then
-          signature_help(clients[1], args.buf, api.nvim_win_get_cursor(0)[1])
+          signature_help(clients[1], args.buf, lnum)
         end
       end
 
