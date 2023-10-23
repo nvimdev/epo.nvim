@@ -200,7 +200,7 @@ local function signature_help(client, bufnr, lnum)
       api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(hl))
     end
 
-    local g = api.nvim_create_augroup('epo_with_snippet_' .. ctx.bufnr, { clear = true })
+    local g = api.nvim_create_augroup('epo_with_signature_' .. ctx.bufnr, { clear = true })
     local data = result.signatures[1] or result.signature
     api.nvim_create_autocmd('ModeChanged', {
       buffer = ctx.bufnr,
@@ -231,11 +231,15 @@ local function signature_help(client, bufnr, lnum)
       end,
     })
 
+    ---@diagnostic disable-next-line: invisible
+    local count = vim.tbl_count(vim.snippet._session.tabstops)
     api.nvim_create_autocmd('CursorMovedI', {
       buffer = ctx.bufnr,
       group = g,
       callback = function()
-        if not vim.snippet.active() then
+        ---@diagnostic disable-next-line: invisible
+        local curindex = vim.snippet._session.current_tabstop.index + 1
+        if curindex == count then
           pcall(api.nvim_win_close, fwin, true)
           api.nvim_del_augroup_by_id(g)
         end
