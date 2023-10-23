@@ -200,10 +200,11 @@ local function signature_help(client, bufnr)
       api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(hl))
     end
 
+    local g = api.nvim_create_augroup('epo_with_snippet_' .. ctx.bufnr, { clear = true })
     local data = result.signatures[1] or result.signature
-    local id = api.nvim_create_autocmd('ModeChanged', {
+    api.nvim_create_autocmd('ModeChanged', {
       buffer = ctx.bufnr,
-      group = group,
+      group = g,
       callback = function()
         ---@diagnostic disable-next-line: invisible
         if not data.parameters or not data.parameters or not vim.snippet._session then
@@ -217,15 +218,25 @@ local function signature_help(client, bufnr)
         end
       end,
     })
+
+    api.nvim_create_autocmd('InsertLeave', {
+      buffer = ctx.bufnr,
+      group = g,
+      callback = function()
+        if api.nvim_win_is_valid(fwin) then
+          api.nvim_win_close(fwin, true)
+          fwin = nil
+        end
+      end,
+    })
+
     api.nvim_create_autocmd('CursorMovedI', {
       buffer = ctx.bufnr,
-      group = group,
-      callback = function(args)
+      group = g,
+      callback = function()
         if not vim.snippet.active() then
           pcall(api.nvim_win_close, fwin, true)
-          fwin = nil
-          api.nvim_del_autocmd(args.id)
-          api.nvim_del_autocmd(id)
+          api.nvim_del_augroup_by_id(g)
         end
       end,
     })
