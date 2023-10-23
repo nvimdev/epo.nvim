@@ -7,8 +7,8 @@ local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
 local ns = api.nvim_create_namespace('Epo')
 local match_fuzzy = false
+local signature = false
 local debounce_time = 100
-local signature = true
 local cmp_data = {}
 
 local function buf_data_init(bufnr)
@@ -435,7 +435,7 @@ end
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
-  signature = opt.signature or true
+  signature = opt.signature or false
 
   if not vim.snippet then
     vim.notify('neovim version a bit old', vim.logs.level.WARN)
