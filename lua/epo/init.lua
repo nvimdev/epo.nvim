@@ -296,6 +296,7 @@ local function complete_ondone(bufnr)
       if textedits then
         lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
       end
+      cmp_data[args.buf] = nil
     end,
   })
 end
