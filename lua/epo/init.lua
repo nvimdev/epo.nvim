@@ -122,6 +122,8 @@ local function signature_help(client, bufnr, lnum)
     if not lines or vim.tbl_isempty(lines) then
       return
     end
+    -- just show parmas in signature help
+    lines = { unpack(lines, 1, 3) }
     fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
       close_events = {},
       border = 'rounded',
