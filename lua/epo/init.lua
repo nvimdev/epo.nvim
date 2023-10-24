@@ -445,7 +445,7 @@ local function setup(opt)
   signature = opt.signature or false
 
   if not vim.snippet then
-    vim.notify('neovim version a bit old', vim.logs.level.WARN)
+    vim.notify('neovim version a bit old', vim.log.level.WARN)
   end
 
   -- Usually I just use one client for completion so just one
