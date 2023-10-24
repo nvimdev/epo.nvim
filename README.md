@@ -14,7 +14,7 @@ require('epo').setup({
     -- increase this value can aviod trigger complete when delete character.
     debounce = 50,
     -- when completion confrim auto show a signature help floating window.
-    signature = true,
+    signature = false,
 })
 ```
 
