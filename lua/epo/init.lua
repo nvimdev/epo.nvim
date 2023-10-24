@@ -197,10 +197,17 @@ local function complete_ondone(bufnr)
       if not item or vim.tbl_isempty(item) then
         return
       end
+      local textedits =
+        vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
+      if textedits then
+        lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
+      end
+
       local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
       if not completion_item then
         return
       end
+
       local insertText = vim.tbl_get(completion_item, 'insertText')
       local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
@@ -231,11 +238,6 @@ local function complete_ondone(bufnr)
         end
       end
 
-      local textedits =
-        vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
-      if textedits then
-        lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
-      end
       cmp_data[args.buf] = nil
     end,
   })
@@ -444,7 +446,7 @@ end
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
-  signature = opt.signature or false
+  signature = opt.signature or true
 
   if not vim.snippet then
     vim.notify('neovim version a bit old', vim.log.levels.WARN)
