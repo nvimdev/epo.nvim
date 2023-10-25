@@ -446,7 +446,7 @@ end
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
-  signature = opt.signature or true
+  signature = opt.signature or false
 
   if not vim.snippet then
     vim.notify('neovim version a bit old', vim.log.levels.WARN)
