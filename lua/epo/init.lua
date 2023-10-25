@@ -11,7 +11,7 @@ local signature = false
 local debounce_time = 100
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
-local disable = false
+local disable = nil
 local cmp_data = {}
 
 local function buf_data_init(bufnr)
@@ -190,12 +190,12 @@ local function complete_ondone(bufnr)
     buffer = bufnr,
     once = true,
     callback = function(args)
-      if not disable then
-        disable = true
-      end
       local item = vim.v.completed_item
       if not item or vim.tbl_isempty(item) then
         return
+      end
+      if not disable then
+        disable = true
       end
       local textedits =
         vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
@@ -383,7 +383,7 @@ local function auto_complete(client, bufnr)
     group = group,
     buffer = bufnr,
     callback = function(args)
-      if disable then
+      if disable == true then
         disable = false
         return
       end
@@ -399,6 +399,7 @@ local function auto_complete(client, bufnr)
       if not ok then
         return
       end
+
       if val ~= 0 then
         local triggerCharacters = client.server_capabilities.completionProvider.triggerCharacters
           or {}
