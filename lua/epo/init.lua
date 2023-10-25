@@ -383,7 +383,7 @@ local function auto_complete(client, bufnr)
     group = group,
     buffer = bufnr,
     callback = function(args)
-      if disable == true then
+      if disable then
         disable = false
         return
       end
