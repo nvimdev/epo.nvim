@@ -237,8 +237,6 @@ local function complete_ondone(bufnr)
           signature_help(clients[1], args.buf, lnum)
         end
       end
-
-      cmp_data[args.buf] = nil
     end,
   })
 end
