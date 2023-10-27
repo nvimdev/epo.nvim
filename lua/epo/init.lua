@@ -206,16 +206,10 @@ local function complete_ondone(bufnr)
       end
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
 
-      --apply textEdit or textedits
       if completion_item.additionalTextEdits then
-        lsp.util.apply_text_edits(
-          completion_item.additionalTextEdits,
-          bufnr,
-          client.offset_encoding
-        )
+        lsp.util.apply_text_edits(completion_item.additionalTextEdits, bufnr, 'utf-8')
       end
 
-      print(vim.inspect(completion_item))
       local is_snippet = completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
       local offset_snip
       --apply textEdit
