@@ -1,7 +1,5 @@
-local api, vfn = vim.api, vim.fn
+local api, vfn, uv, lsp = vim.api, vim.fn, vim.uv, vim.lsp
 local protocol = require('vim.lsp.protocol')
-local uv = vim.uv
-local lsp = vim.lsp
 local util = require('vim.lsp.util')
 local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
@@ -206,27 +204,35 @@ local function complete_ondone(bufnr)
       if not client then
         return
       end
-
-      --apply textEdit dot change to arrow
-      if completion_item.textEdit then
-        completion_item.textEdit.range['end'].character = vfn.charcol('.')
-        lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
-      end
+      local lnum, col = unpack(api.nvim_win_get_cursor(0))
 
       --apply textEdit or textedits
-      if completion_item.textedits then
-        lsp.util.apply_text_edits(completion_item.textedits, bufnr, client.offset_encoding)
+      if completion_item.additionalTextEdits then
+        lsp.util.apply_text_edits(
+          completion_item.additionalTextEdits,
+          bufnr,
+          client.offset_encoding
+        )
       end
 
-      local insertText = vim.tbl_get(completion_item, 'insertText')
-      local insertTextFormat = vim.tbl_get(completion_item, 'insertTextFormat')
-      local lnum, col = unpack(api.nvim_win_get_cursor(0))
-      if
-        insertText
-        and insertTextFormat == lsp.protocol.InsertTextFormat.Snippet
-        and vim.snippet
-      then
-        local offset_snip = insertText:sub(col - cmp_data[args.buf].startidx + 1)
+      print(vim.inspect(completion_item))
+      local is_snippet = completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
+      local offset_snip
+      --apply textEdit
+      if completion_item.textEdit then
+        if is_snippet then
+          offset_snip = completion_item.textEdit.newText
+        else
+          local range = completion_item.textEdit.range
+          range['end'].character = vfn.charcol('.')
+          lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
+        end
+      elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
+        offset_snip = completion_item.insertText
+      end
+
+      if offset_snip then
+        offset_snip = completion_item.insertText:sub(col - cmp_data[args.buf].startidx + 1)
         vim.snippet.expand(offset_snip)
       end
 
