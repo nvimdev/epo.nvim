@@ -14,10 +14,11 @@ local debounce_time = 100
 local disable = nil
 local cmp_data = {}
 
-local function buf_data_init(bufnr)
+local function buf_data_init(bufnr, id)
   cmp_data[bufnr] = {
     incomplete = {},
     timer = nil,
+    client_id = id,
   }
 end
 
@@ -197,15 +198,24 @@ local function complete_ondone(bufnr)
       if not disable then
         disable = true
       end
-      local textedits =
-        vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item', 'additionalTextEdits')
-      if textedits then
-        lsp.util.apply_text_edits(textedits, bufnr, 'utf-16')
-      end
-
       local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
       if not completion_item then
         return
+      end
+      local client = lsp.get_clients({ id = cmp_data[args.buf].client_id })[1]
+      if not client then
+        return
+      end
+
+      --apply textEdit dot change to arrow
+      if completion_item.textEdit then
+        completion_item.textEdit.range['end'].character = vfn.charcol('.')
+        lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
+      end
+
+      --apply textEdit or textedits
+      if completion_item.textedits then
+        lsp.util.apply_text_edits(completion_item.textedits, bufnr, client.offset_encoding)
       end
 
       local insertText = vim.tbl_get(completion_item, 'insertText')
@@ -408,7 +418,7 @@ local function auto_complete(client, bufnr)
         triggerChar = char
       end
       if not cmp_data[args.buf] then
-        buf_data_init(args.buf)
+        buf_data_init(args.buf, client.id)
       end
       debounce(client, args.buf, triggerKind, triggerChar)
     end,
