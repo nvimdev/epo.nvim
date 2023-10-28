@@ -218,7 +218,19 @@ local function complete_ondone(bufnr)
           offset_snip = completion_item.textEdit.newText
         else
           local range = completion_item.textEdit.range
-          range['end'].character = vfn.charcol('.')
+
+          if vim.bo.filetype == 'c' or vim.bo.filetype == 'cpp' then
+            local newText = completion_item.textEdit['newText']
+
+            if string.match(newText, '.*[.h>]$') ~= nil then
+              completion_item.textEdit['newText'] = newText:sub(1, #newText - 1)
+            end
+
+            range['end'].character = vfn.charcol('.') - 1
+          else
+            range['end'].character = vfn.charcol('.')
+          end
+
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
