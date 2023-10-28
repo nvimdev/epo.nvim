@@ -10,10 +10,10 @@ local debounce_time = 100
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
 local disable = nil
-local cmp_data = {}
+local context = {}
 
-local function buf_data_init(bufnr, id)
-  cmp_data[bufnr] = {
+local function context_init(bufnr, id)
+  context[bufnr] = {
     incomplete = {},
     timer = nil,
     client_id = id,
@@ -200,12 +200,11 @@ local function complete_ondone(bufnr)
       if not completion_item then
         return
       end
-      local client = lsp.get_clients({ id = cmp_data[args.buf].client_id })[1]
+      local client = lsp.get_clients({ id = context[args.buf].client_id })[1]
       if not client then
         return
       end
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
-
       if completion_item.additionalTextEdits then
         lsp.util.apply_text_edits(completion_item.additionalTextEdits, bufnr, 'utf-8')
       end
@@ -218,7 +217,7 @@ local function complete_ondone(bufnr)
           offset_snip = completion_item.textEdit.newText
         else
           local range = completion_item.textEdit.range
-          range['end'].character = vfn.charcol('.')
+          range['end'].character = col
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
@@ -226,7 +225,7 @@ local function complete_ondone(bufnr)
       end
 
       if offset_snip then
-        offset_snip = completion_item.insertText:sub(col - cmp_data[args.buf].startidx + 1)
+        offset_snip = completion_item.insertText:sub(col - context[args.buf].startidx + 1)
         vim.snippet.expand(offset_snip)
       end
 
@@ -263,7 +262,7 @@ local function completion_handler(_, result, ctx)
     compitems = result
   else
     compitems = result.items
-    cmp_data[ctx.bufnr].incomplete[ctx.client_id] = result.isIncomplete or false
+    context[ctx.bufnr].incomplete[ctx.client_id] = result.isIncomplete or false
   end
 
   local col = vfn.charcol('.')
@@ -276,7 +275,7 @@ local function completion_handler(_, result, ctx)
     return
   end
   local prefix, start_idx = unpack(retval)
-  cmp_data[ctx.bufnr].startidx = start_idx
+  context[ctx.bufnr].startidx = start_idx
   local startcol = start_idx + 1
   prefix = prefix:lower()
 
@@ -322,7 +321,7 @@ local function completion_handler(_, result, ctx)
     if lsp.protocol.InsertTextFormat[item.insertTextFormat] == 'Snippet' then
       entry.word = make_valid_word(entry.word)
       -- entry.word = util.parse_snippet(entry.word)
-    elseif not cmp_data[ctx.bufnr].incomplete then
+    elseif not context[ctx.bufnr].incomplete then
       if #prefix ~= 0 then
         local filter = item.filterText or entry.word
         if
@@ -370,16 +369,16 @@ local function completion_request(client, bufnr, trigger_kind, trigger_char)
 end
 
 local function debounce(client, bufnr, triggerKind, triggerChar)
-  if not cmp_data[bufnr] then
+  if not context[bufnr] then
     return
   end
-  if cmp_data[bufnr].timer and cmp_data[bufnr].timer:is_active() then
-    cmp_data[bufnr].timer:close()
-    cmp_data[bufnr].timer:stop()
-    cmp_data[bufnr].timer = nil
+  if context[bufnr].timer and context[bufnr].timer:is_active() then
+    context[bufnr].timer:close()
+    context[bufnr].timer:stop()
+    context[bufnr].timer = nil
   end
-  cmp_data[bufnr].timer = uv.new_timer()
-  cmp_data[bufnr].timer:start(debounce_time, 0, function()
+  context[bufnr].timer = uv.new_timer()
+  context[bufnr].timer:start(debounce_time, 0, function()
     vim.schedule(function()
       completion_request(client, bufnr, triggerKind, triggerChar)
     end)
@@ -417,8 +416,8 @@ local function auto_complete(client, bufnr)
         triggerKind = lsp.protocol.CompletionTriggerKind.TriggerCharacter
         triggerChar = char
       end
-      if not cmp_data[args.buf] then
-        buf_data_init(args.buf, client.id)
+      if not context[args.buf] then
+        context_init(args.buf, client.id)
       end
       debounce(client, args.buf, triggerKind, triggerChar)
     end,
