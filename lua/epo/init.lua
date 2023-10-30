@@ -226,7 +226,9 @@ local function complete_ondone(bufnr)
 
       if offset_snip then
         offset_snip = completion_item.insertText:sub(col - context[args.buf].startidx + 1)
-        vim.snippet.expand(offset_snip)
+        if #offset_snip > 0 then
+          vim.snippet.expand(offset_snip)
+        end
       end
 
       if signature then
