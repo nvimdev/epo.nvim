@@ -86,10 +86,7 @@ local function complete_changed(bufnr)
     buffer = bufnr,
     group = group,
     callback = function(args)
-      local build = vim.version().build
-      if build:match('^g') or build:match('dirty') then
-        show_info(args.buf)
-      end
+      show_info(args.buf)
     end,
   })
 end
@@ -345,7 +342,9 @@ local function completion_handler(_, result, ctx)
   if mode == 'i' or mode == 'ic' then
     vfn.complete(startcol, entrys)
     complete_ondone(ctx.bufnr)
-    complete_changed(ctx.bufnr)
+    if vim.tbl_contains(vim.opt.completeopt:get(), 'popup') then
+      complete_changed(ctx.bufnr)
+    end
   end
 end
 
@@ -414,7 +413,7 @@ local function auto_complete(client, bufnr)
   })
   local build = vim.version().build
   if build:match('^g') or build:match('dirty') then
-    api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
+    -- api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
   end
 end
 
