@@ -59,32 +59,25 @@ local function lspkind(kind)
   return k:lower():sub(1, 1)
 end
 
-local function get_documentation(selected, param, bufnr)
-  lsp.buf_request(bufnr, ms.completionItem_resolve, param, function(_, result)
-    if not vim.tbl_get(result, 'documentation', 'value') then
-      return
-    end
-    local wininfo = api.nvim_complete_set_info(selected, result.documentation.value)
-    if not vim.tbl_isempty(wininfo) and wininfo.bufnr and api.nvim_buf_is_valid(wininfo.bufnr) then
-      vim.bo[wininfo.bufnr].filetype = 'markdown'
-    end
-  end)
-end
-
-local function show_info(cmp_info, bufnr)
-  if not cmp_info.items[cmp_info.selected + 1] then
-    return
-  end
-  local info = vim.tbl_get(cmp_info.items[cmp_info.selected + 1], 'info')
+local function show_info(bufnr)
+  local info = vim.tbl_get(vim.v.event, 'completed_item', 'info')
+  local data = vim.fn.complete_info()
+  local selected = data.selected
   if not info or #info == 0 then
-    local param = vim.tbl_get(
-      cmp_info.items[cmp_info.selected + 1],
-      'user_data',
-      'nvim',
-      'lsp',
-      'completion_item'
-    )
-    get_documentation(cmp_info.selected, param, bufnr)
+    local param =
+      vim.tbl_get(vim.v.event.completed_item, 'user_data', 'nvim', 'lsp', 'completion_item')
+    local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
+    client.request(ms.completionItem_resolve, param, function(_, result)
+      if not result then
+        return
+      end
+      local value = vim.tbl_get(result, 'documentation', 'value')
+      local kind = vim.tbl_get(result, 'documentation', 'kind')
+      if value then
+        local wininfo = api.nvim_complete_set_info(selected, value)
+        api.nvim_set_option_value('filetype', kind or '', { buf = wininfo.bufnr })
+      end
+    end, bufnr)
   end
 end
 
@@ -92,15 +85,10 @@ local function complete_changed(bufnr)
   api.nvim_create_autocmd('CompleteChanged', {
     buffer = bufnr,
     group = group,
-    once = true,
     callback = function(args)
-      local cmp_info = vfn.complete_info()
-      if cmp_info.selected == -1 then
-        return
-      end
       local build = vim.version().build
       if build:match('^g') or build:match('dirty') then
-        show_info(cmp_info, args.buf)
+        show_info(args.buf)
       end
     end,
   })
