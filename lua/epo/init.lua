@@ -174,12 +174,12 @@ local function complete_ondone(bufnr)
     buffer = bufnr,
     once = true,
     callback = function(args)
-      if not disable then
-        disable = true
-      end
       local item = vim.v.completed_item
       if not item or vim.tbl_isempty(item) then
         return
+      end
+      if not disable then
+        disable = true
       end
       local completion_item = vim.tbl_get(item, 'user_data', 'nvim', 'lsp', 'completion_item')
       if not completion_item then
@@ -411,10 +411,10 @@ local function auto_complete(client, bufnr)
       debounce(client, args.buf, triggerKind, triggerChar)
     end,
   })
-  local build = vim.version().build
-  if build:match('^g') or build:match('dirty') then
-    api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
-  end
+  -- local build = vim.version().build
+  -- if build:match('^g') or build:match('dirty') then
+  --   api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
+  -- end
 end
 
 local function register_cap()
@@ -474,7 +474,14 @@ local function setup(opt)
   })
 end
 
+local function disable_trigger()
+  if not disable then
+    disable = true
+  end
+end
+
 return {
   setup = setup,
   register_cap = register_cap,
+  disable_trigger = disable_trigger,
 }
