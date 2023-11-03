@@ -194,15 +194,21 @@ local function complete_ondone(bufnr)
         lsp.util.apply_text_edits(completion_item.additionalTextEdits, bufnr, 'utf-8')
       end
 
+      local curline = api.nvim_get_current_line()
       local is_snippet = completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
       local offset_snip
       --apply textEdit
       if completion_item.textEdit then
-        if is_snippet then
+        if is_snippet and completion_item.textEdit.newText:find('%$%d') then
           offset_snip = completion_item.textEdit.newText
         else
           local range = completion_item.textEdit.range
-          range['end'].character = col
+          if col ~= #curline and curline:sub(col + 1, col + 1) ~= ' ' then
+            range['end'].character = col + 1
+            api.nvim_win_set_cursor(0, { lnum, col + 1 })
+          else
+            range['end'].character = col
+          end
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
@@ -210,7 +216,7 @@ local function complete_ondone(bufnr)
       end
 
       if offset_snip then
-        offset_snip = completion_item.insertText:sub(col - context[args.buf].startidx + 1)
+        offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
