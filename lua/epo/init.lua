@@ -216,6 +216,12 @@ local function complete_ondone(bufnr)
           -- end
           --
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
+          -- in C when i complete a function which has brackets ()
+          -- the cursor is before brackets so adjust cursor if needed.
+          if item.kind == 'f' and newText:find('%(%)$') then
+            local curpos = api.nvim_win_get_cursor(0)
+            api.nvim_win_set_cursor(0, { curpos[1], curpos[2] + 2 })
+          end
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
         offset_snip = completion_item.insertText
