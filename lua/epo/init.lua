@@ -199,12 +199,13 @@ local function complete_ondone(bufnr)
         if is_snippet and completion_item.textEdit.newText:find('%$') then
           offset_snip = completion_item.textEdit.newText
         else
-          -- work around with auto pairs plugin
-          -- local t = {} t[#|] -- trigger here
+          -- work around with pair
+          -- situation1: local t = {} t[#|]<--
+          -- situation2: #include "header item|""<--
           local newText = completion_item.textEdit.newText
           local range = completion_item.textEdit.range
           local nextchar = curline:sub(col + 1, col + 1)
-          local determine = newText:sub(#item.abbr + 1, #item.abbr + 1)
+          local determine = newText:sub(#item.word, #item.word)
           if col ~= #curline and determine == nextchar then
             range['end'].character = col + 1
             api.nvim_win_set_cursor(0, { lnum, col + 1 })
