@@ -189,13 +189,14 @@ local function complete_ondone(bufnr)
       if not client then
         return
       end
+      -- local startidx = context[args.buf].startidx
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
       local curline = api.nvim_get_current_line()
       local is_snippet = completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
       local offset_snip
       --apply textEdit
       if completion_item.textEdit then
-        if is_snippet and completion_item.textEdit.newText:find('%$%d') then
+        if is_snippet and completion_item.textEdit.newText:find('%$') then
           offset_snip = completion_item.textEdit.newText
         else
           -- work around with auto pairs plugin
@@ -210,6 +211,10 @@ local function complete_ondone(bufnr)
           else
             range['end'].character = col
           end
+          -- if range.start.character ~= startidx then
+          --   range.start.character = startidx
+          -- end
+          --
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
