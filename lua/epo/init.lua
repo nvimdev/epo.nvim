@@ -190,11 +190,6 @@ local function complete_ondone(bufnr)
         return
       end
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
-      if completion_item.additionalTextEdits then
-        lsp.util.apply_text_edits(completion_item.additionalTextEdits, bufnr, 'utf-8')
-      end
-      local startidx = context[args.buf].startidx
-
       local curline = api.nvim_get_current_line()
       local is_snippet = completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
       local offset_snip
@@ -226,6 +221,12 @@ local function complete_ondone(bufnr)
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
+      end
+
+      -- addtional usually for import header
+      -- so make it applied after textEdit
+      if completion_item.additionalTextEdits then
+        lsp.util.apply_text_edits(completion_item.additionalTextEdits, bufnr, 'utf-8')
       end
 
       if signature then
