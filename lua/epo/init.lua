@@ -7,10 +7,13 @@ local ns = api.nvim_create_namespace('Epo')
 local match_fuzzy = false
 local signature = false
 local debounce_time = 100
+local snippet_path = nil
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
 local disable = nil
-local context = {}
+local context = {
+  snippets = {},
+}
 
 local function context_init(bufnr, id)
   context[bufnr] = {
@@ -192,7 +195,8 @@ local function complete_ondone(bufnr)
       -- local startidx = context[args.buf].startidx
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
       local curline = api.nvim_get_current_line()
-      local is_snippet = completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
+      local is_snippet = item.kind == 's'
+        or completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
       local offset_snip
       --apply textEdit
       if completion_item.textEdit then
@@ -262,6 +266,40 @@ local function complete_ondone(bufnr)
   })
 end
 
+local function extend_snippets(ft)
+  local fname = vim.fs.joinpath(snippet_path, ('%s.json'):format(ft))
+  if not snippet_path or context.snippets[ft] or not uv.fs_stat(fname) then
+    return
+  end
+  local chunks = {}
+  uv.fs_open(fname, 'r', 438, function(err, fd)
+    assert(not err, err)
+    uv.fs_fstat(fd, function(err, stat)
+      assert(not err, err)
+      uv.fs_read(fd, stat.size, 0, function(err, data)
+        assert(not err, err)
+        if data then
+          chunks[#chunks + 1] = data
+        end
+        uv.fs_close(fd, function(err)
+          assert(not err, err)
+          local t = vim.json.decode(table.concat(chunks))
+          context.snippets[ft] = {}
+          for k, v in pairs(t) do
+            local e = {
+              label = k,
+              insertText = v.body[1],
+              kind = 15,
+              insertTextFormat = 2,
+            }
+            table.insert(context.snippets[ft], e)
+          end
+        end)
+      end)
+    end)
+  end)
+end
+
 local function completion_handler(_, result, ctx)
   local client = lsp.get_clients({ id = ctx.client_id })
   if not result or not client or not api.nvim_buf_is_valid(ctx.bufnr) then
@@ -291,7 +329,9 @@ local function completion_handler(_, result, ctx)
   local startcol = start_idx + 1
   prefix = prefix:lower()
 
-  for _, item in ipairs(compitems) do
+  for _, item in
+    ipairs(vim.list_extend(compitems, context.snippets[vim.bo[ctx.bufnr].filetype] or {}))
+  do
     local entry = {
       abbr = item.label,
       kind = lspkind(item.kind),
@@ -332,7 +372,6 @@ local function completion_handler(_, result, ctx)
     local register = true
     if lsp.protocol.InsertTextFormat[item.insertTextFormat] == 'Snippet' then
       entry.word = make_valid_word(entry.word)
-      -- entry.word = util.parse_snippet(entry.word)
     elseif not context[ctx.bufnr].incomplete then
       if #prefix ~= 0 then
         local filter = item.filterText or entry.word
@@ -469,10 +508,7 @@ local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
   signature = opt.signature or false
-
-  if not vim.snippet then
-    vim.notify('neovim version a bit old', vim.log.levels.WARN)
-  end
+  snippet_path = opt.snippet_path
 
   -- Usually I just use one client for completion so just one
   api.nvim_create_autocmd('LspAttach', {
@@ -495,6 +531,10 @@ local function setup(opt)
         return
       end
       auto_complete(clients[1], args.buf)
+
+      if snippet_path then
+        extend_snippets(vim.bo[args.buf].filetype)
+      end
     end,
   })
 end

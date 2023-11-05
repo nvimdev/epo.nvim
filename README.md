@@ -15,6 +15,8 @@ require('epo').setup({
     debounce = 50,
     -- when completion confrim auto show a signature help floating window.
     signature = false,
+    -- extend vscode format snippet json files. like rust.json/typescriptreact.json/zig.json
+    snippet_path = nil,
 })
 ```
 
