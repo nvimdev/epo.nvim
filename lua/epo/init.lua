@@ -203,6 +203,7 @@ local function complete_ondone(bufnr)
         if is_snippet and completion_item.textEdit.newText:find('%$') then
           offset_snip = completion_item.textEdit.newText
         else
+          -- TODO(glepnir): there is too hacky not sure is correct
           -- work around with pair
           -- situation1: local t = {} t[#|]<--
           -- situation2: #include "header item|""<--
@@ -210,7 +211,8 @@ local function complete_ondone(bufnr)
           local range = completion_item.textEdit.range
           local nextchar = curline:sub(col + 1, col + 1)
           local determine = newText:sub(#item.word, #item.word)
-          if col ~= #curline and determine == nextchar then
+          local end_of_line = col == #curline
+          if not end_of_line and determine == nextchar then
             range['end'].character = col + 1
             api.nvim_win_set_cursor(0, { lnum, col + 1 })
           else
@@ -221,10 +223,18 @@ local function complete_ondone(bufnr)
           -- end
           --
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
+          -- TODO(glepnir): there is too hacky not sure is correct
+          -- situation1:
           -- in C when i complete a function which has brackets ()
-          -- the cursor is before brackets so adjust cursor if needed.
-          if item.kind == 'f' and newText:find('%(%)$') then
-            local curpos = api.nvim_win_get_cursor(0)
+          -- and without params the cursor is before brackets so adjust cursor if needed.
+          -- situation2:
+          -- like curwin.w_floating which insertText is ->w_floating
+          -- after apply_text_edits the cursor not at the end of line
+          local curpos = api.nvim_win_get_cursor(0)
+          if
+            (item.kind == 'f' and newText:find('%(%)$'))
+            or (end_of_line and curpos[2] ~= #api.nvim_get_current_line())
+          then
             api.nvim_win_set_cursor(0, { curpos[1], curpos[2] + 2 })
           end
         end
@@ -358,8 +368,8 @@ local function completion_handler(_, result, ctx)
       end
       local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
       if te_startcol ~= start_col then
-        local offset = start_col - te_startcol - 1
-        entry.word = textEdit.newText:sub(offset)
+        local offset = start_col - te_startcol
+        entry.word = textEdit.newText:sub(offset + 1)
       else
         entry.word = textEdit.newText
       end
