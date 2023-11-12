@@ -218,10 +218,7 @@ local function complete_ondone(bufnr)
           else
             range['end'].character = col
           end
-          -- if range.start.character ~= startidx then
-          --   range.start.character = startidx
-          -- end
-          --
+
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
           -- TODO(glepnir): there is too hacky not sure is correct
           -- situation1:
@@ -233,9 +230,7 @@ local function complete_ondone(bufnr)
           local curpos = api.nvim_win_get_cursor(0)
           local adjcol
 
-          if range.start.character == context[args.buf].startidx - 1 then
-            adjcol = 1
-          elseif item.kind == 'f' and newText:find('%(%)$') then
+          if item.kind == 'f' and newText:find('%(%)$') then
             adjcol = 2
           end
 
@@ -373,7 +368,7 @@ local function completion_handler(_, result, ctx)
       end
       local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
       if te_startcol ~= start_col then
-        local offset = start_col - te_startcol + 1
+        local offset = start_col - te_startcol
         entry.word = textEdit.newText:sub(offset)
       else
         entry.word = textEdit.newText
