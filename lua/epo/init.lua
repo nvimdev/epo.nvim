@@ -210,9 +210,8 @@ local function complete_ondone(bufnr)
           local newText = completion_item.textEdit.newText
           local range = completion_item.textEdit.range
           local nextchar = curline:sub(col + 1, col + 1)
-          local determine = newText:sub(#item.word, #item.word)
-          local end_of_line = col == #curline
-          if not end_of_line and determine == nextchar then
+          local determine = newText:sub(#item.abbr, #item.abbr)
+          if determine == nextchar then
             range['end'].character = col + 1
             api.nvim_win_set_cursor(0, { lnum, col + 1 })
           else
