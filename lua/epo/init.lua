@@ -231,11 +231,16 @@ local function complete_ondone(bufnr)
           -- like curwin.w_floating which insertText is ->w_floating
           -- after apply_text_edits the cursor not at the end of line
           local curpos = api.nvim_win_get_cursor(0)
-          if
-            (item.kind == 'f' and newText:find('%(%)$'))
-            or (end_of_line and curpos[2] ~= #api.nvim_get_current_line())
-          then
-            api.nvim_win_set_cursor(0, { curpos[1], curpos[2] + 2 })
+          local adjcol
+
+          if range.start.character == context[args.buf].startidx - 1 then
+            adjcol = 1
+          elseif item.kind == 'f' and newText:find('%(%)$') then
+            adjcol = 2
+          end
+
+          if adjcol then
+            api.nvim_win_set_cursor(0, { curpos[1], curpos[2] + adjcol })
           end
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
@@ -368,8 +373,8 @@ local function completion_handler(_, result, ctx)
       end
       local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
       if te_startcol ~= start_col then
-        local offset = start_col - te_startcol
-        entry.word = textEdit.newText:sub(offset + 1)
+        local offset = start_col - te_startcol + 1
+        entry.word = textEdit.newText:sub(offset)
       else
         entry.word = textEdit.newText
       end
