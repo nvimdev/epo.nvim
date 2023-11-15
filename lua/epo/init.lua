@@ -355,12 +355,8 @@ local function completion_handler(_, result, ctx)
         range = textEdit.insert
       end
       local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
-      if te_startcol ~= start_col then
-        local offset = start_col - te_startcol
-        entry.word = textEdit.newText:sub(offset + 1)
-      else
-        entry.word = textEdit.newText
-      end
+      entry.word = te_startcol ~= start_col and textEdit.newText:sub(start_col - te_startcol + 1)
+        or textEdit.newText
     elseif vim.tbl_get(item, 'insertText') then
       entry.word = item.insertText
     else
