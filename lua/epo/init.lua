@@ -192,9 +192,10 @@ local function complete_ondone(bufnr)
       if not client then
         return
       end
-      -- local startidx = context[args.buf].startidx
+      local startidx = context[args.buf].startidx
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
       local curline = api.nvim_get_current_line()
+
       local is_snippet = item.kind == 's'
         or completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet
       local offset_snip
@@ -203,39 +204,28 @@ local function complete_ondone(bufnr)
         if is_snippet and completion_item.textEdit.newText:find('%$') then
           offset_snip = completion_item.textEdit.newText
         else
-          -- TODO(glepnir): there is too hacky not sure is correct
+          local newText = completion_item.textEdit.newText
+          local range = completion_item.textEdit.range
           -- work around with pair
           -- situation1: local t = {} t[#|]<--
           -- situation2: #include "header item|""<--
-          local newText = completion_item.textEdit.newText
-          local range = completion_item.textEdit.range
           local nextchar = curline:sub(col + 1, col + 1)
-          local determine = newText:sub(#item.word, #item.word)
-          if determine == nextchar then
-            range['end'].character = col + 1
-            api.nvim_win_set_cursor(0, { lnum, col + 1 })
-          else
-            range['end'].character = col
+          local extra = 0
+          -- asume they are paired
+          if vim.tbl_contains({ ']', '"' }, nextchar) then
+            extra = 1
           end
-
+          api.nvim_buf_set_text(
+            bufnr,
+            lnum - 1,
+            startidx,
+            lnum - 1,
+            startidx + #item.word + extra,
+            { '' }
+          )
+          range['end'].character = api.nvim_win_get_cursor(0)[2]
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
-          -- TODO(glepnir): there is too hacky not sure is correct
-          -- situation1:
-          -- in C when i complete a function which has brackets ()
-          -- and without params the cursor is before brackets so adjust cursor if needed.
-          -- situation2:
-          -- like curwin.w_floating which insertText is ->w_floating
-          -- after apply_text_edits the cursor not at the end of line
-          local curpos = api.nvim_win_get_cursor(0)
-          local adjcol
-
-          if item.kind == 'f' and newText:find('%(%)$') then
-            adjcol = 2
-          end
-
-          if adjcol then
-            api.nvim_win_set_cursor(0, { curpos[1], curpos[2] + adjcol })
-          end
+          api.nvim_win_set_cursor(0, { lnum, range['end'].character + #newText - 1 + extra })
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
         offset_snip = completion_item.insertText
@@ -247,7 +237,6 @@ local function complete_ondone(bufnr)
           vim.snippet.expand(offset_snip)
         end
       end
-
       -- addtional usually for import header
       -- so make it applied after textEdit
       if completion_item.additionalTextEdits then
@@ -368,7 +357,7 @@ local function completion_handler(_, result, ctx)
       local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
       if te_startcol ~= start_col then
         local offset = start_col - te_startcol
-        entry.word = textEdit.newText:sub(offset)
+        entry.word = textEdit.newText:sub(offset + 1)
       else
         entry.word = textEdit.newText
       end
