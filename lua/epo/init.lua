@@ -226,7 +226,6 @@ local function complete_ondone(bufnr)
 
           range['end'].character = api.nvim_win_get_cursor(0)[2]
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
-          print(startidx, vim.inspect(range), extra)
           api.nvim_win_set_cursor(
             0,
             { lnum, range['end'].character + #newText + extra - (startidx - range.start.character) }
