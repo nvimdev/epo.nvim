@@ -223,9 +223,14 @@ local function complete_ondone(bufnr)
             startidx + #item.word + extra,
             { '' }
           )
+
           range['end'].character = api.nvim_win_get_cursor(0)[2]
           lsp.util.apply_text_edits({ completion_item.textEdit }, bufnr, client.offset_encoding)
-          api.nvim_win_set_cursor(0, { lnum, range['end'].character + #newText - 1 + extra })
+          print(startidx, vim.inspect(range), extra)
+          api.nvim_win_set_cursor(
+            0,
+            { lnum, range['end'].character + #newText + extra - (startidx - range.start.character) }
+          )
         end
       elseif completion_item.insertTextFormat == protocol.InsertTextFormat.Snippet then
         offset_snip = completion_item.insertText
@@ -348,15 +353,19 @@ local function completion_handler(_, result, ctx)
     local textEdit = vim.tbl_get(item, 'textEdit')
     if textEdit then
       local start_col = #prefix ~= 0 and vfn.charidx(before_text, start_idx) + 1 or col
-      local range = {}
+      local range
       if textEdit.range then
         range = textEdit.range
       elseif textEdit.insert then
         range = textEdit.insert
       end
       local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
-      entry.word = te_startcol ~= start_col and textEdit.newText:sub(start_col - te_startcol + 1)
-        or textEdit.newText
+      if te_startcol ~= start_col then
+        local extra = start_idx - te_startcol
+        entry.word = textEdit.newText:sub(start_col - te_startcol + extra)
+      else
+        entry.word = textEdit.newText
+      end
     elseif vim.tbl_get(item, 'insertText') then
       entry.word = item.insertText
     else
