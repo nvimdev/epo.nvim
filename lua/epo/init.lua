@@ -210,11 +210,16 @@ local function complete_ondone(bufnr)
           -- situation1: local t = {} t[#|]<--
           -- situation2: #include "header item|""<--
           local nextchar = curline:sub(col + 1, col + 1)
+          local prevchar = curline:sub(range.start.character, range.start.character)
           local extra = 0
           -- asume they are paired
-          if vim.tbl_contains({ ']', '"' }, nextchar) then
+          if
+            (prevchar == '[' and nextchar == ']' and newText:find(']'))
+            or (prevchar == '"' and nextchar == '"' and newText:find('"'))
+          then
             extra = 1
           end
+
           api.nvim_buf_set_text(
             bufnr,
             lnum - 1,
