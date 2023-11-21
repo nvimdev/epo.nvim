@@ -215,7 +215,7 @@ local function complete_ondone(bufnr)
           -- asume they are paired
           if
             (prevchar == '[' and nextchar == ']' and newText:find(']'))
-            or (prevchar == '"' and nextchar == '"' and newText:find('"'))
+            or (nextchar == '"' and newText:find('"'))
           then
             extra = 1
           end
