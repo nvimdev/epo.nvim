@@ -1,6 +1,6 @@
 ## epo.nvim
 
-Blazing fast and minimal lsp auto-completion plugin for neovim.
+Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
 
 **Needs neovim nightly**
 
@@ -9,19 +9,23 @@ Blazing fast and minimal lsp auto-completion plugin for neovim.
 ## Usage
 
 ```lua
+-- suggested completeopt
 vim.opt.completeopt = "menu,menuone,noselect"
+
+-- default settings
 require('epo').setup({
+    -- fuzzy match
     fuzzy = false,
     -- increase this value can aviod trigger complete when delete character.
     debounce = 50,
     -- when completion confrim auto show a signature help floating window.
     signature = false,
-    -- extend vscode format snippet json files. like rust.json/typescriptreact.json/zig.json
+    -- vscode style json snippet path
     snippet_path = nil,
-    -- border for lsp signature popup
+    -- border for lsp signature popup, :h nvim_open_win
     signature_border = 'rounded'
-    -- lsp kind formatting
-    kind_format = opt.kind_format or function(k)
+    -- lsp kind formatting, k is kind string "Field", "Struct", "Keyword" etc.
+    kind_format = function(k)
       return k:lower():sub(1, 1)
     end
 })
@@ -51,7 +55,7 @@ PmenuThumb
 ```
 
 <details>
-<summary>Click to show some preset mappings</summary>
+<summary>Click to show some mapping presets</summary>
 
 - <kbd>TAB</kbd> complete
 
@@ -84,7 +88,7 @@ vim.keymap.set('i', '<C-e>', function()
 end, {expr = true})
 ```
 
-- `<cr>` completion
+- use `<cr>` to accept completion
 
 ```lua
 -- For using enter as completion, may conflict with some autopair plugin
