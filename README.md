@@ -4,7 +4,7 @@ Blazing fast and minimal lsp auto-completion plugin for neovim.
 
 **Needs neovim nightly**
 
-**This plugin would be much feature-complete after [this pr](https://github.com/neovim/neovim/pull/24723) is merged**
+**This plugin would be much more feature-complete after [this pr](https://github.com/neovim/neovim/pull/24723) is merged**
 
 ## Usage
 
@@ -35,6 +35,19 @@ local capabilities = vim.tbl_deep_extend(
       vim.lsp.protocol.make_client_capabilities(),
       require('epo').register_cap()
     )
+```
+
+Completion menu look dull and boring? Your colorscheme may be missing these highlights:
+
+```
+Pmenu
+PmenuExtra
+PmenuSel
+PmenuKind
+PmenuKindSel
+PmenuExtraSel
+PmenuSbar
+PmenuThumb
 ```
 
 <details>
