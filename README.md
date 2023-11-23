@@ -4,9 +4,12 @@ Blazing fast and minimal lsp auto-completion plugin for neovim.
 
 **Needs neovim nightly**
 
+**This plugin would be much feature-complete after [this pr](https://github.com/neovim/neovim/pull/24723) is merged**
+
 ## Usage
 
 ```lua
+vim.opt.completeopt = "menu,menuone,noselect"
 require('epo').setup({
     fuzzy = false,
     -- increase this value can aviod trigger complete when delete character.
@@ -15,6 +18,12 @@ require('epo').setup({
     signature = false,
     -- extend vscode format snippet json files. like rust.json/typescriptreact.json/zig.json
     snippet_path = nil,
+    -- border for lsp signature popup
+    signature_border = 'rounded'
+    -- lsp kind formatting
+    kind_format = opt.kind_format or function(k)
+      return k:lower():sub(1, 1)
+    end
 })
 ```
 
@@ -28,9 +37,10 @@ local capabilities = vim.tbl_deep_extend(
     )
 ```
 
-## Keymap
+<details>
+<summary>Click to show some preset mappings</summary>
 
-Supercharge <kbd>TAB</kbd> and <kbd>Shift-tab</kbd> for completion and snippet expansion.
+- <kbd>TAB</kbd> complete
 
 ```lua
 vim.keymap.set('i', '<TAB>', function()
@@ -60,5 +70,27 @@ vim.keymap.set('i', '<C-e>', function()
   return '<C-e>'
 end, {expr = true})
 ```
+
+- `<cr>` completion
+
+```lua
+-- For using enter as completion, may conflict with some autopair plugin
+vim.keymap.set("i", "<cr>", function()
+    if vim.fn.pumvisible() == 1 then
+        return "<C-y>"
+    end
+    return "<cr>"
+end, { expr = true, noremap = true })
+
+-- nvim-autopair compatibility
+vim.keymap.set("i", "<cr>", function()
+    if vim.fn.pumvisible() == 1 then
+        return "<C-y>"
+    end
+    return require("nvim-autopairs").autopairs_cr()
+end, { expr = true, noremap = true })
+```
+
+</details>
 
 ## License MIT
