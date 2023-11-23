@@ -1,15 +1,13 @@
-## Epo
+## epo.nvim
 
-a blazing fast and minimal less than 300 lines. neovim lsp auto-completion plugin.
+Blazing fast and minimal lsp auto-completion plugin for neovim.
 
-**Need neovim nightly**
-
+**Needs neovim nightly**
 
 ## Usage
 
 ```lua
 require('epo').setup({
-    -- default value of options.
     fuzzy = false,
     -- increase this value can aviod trigger complete when delete character.
     debounce = 50,
@@ -20,22 +18,19 @@ require('epo').setup({
 })
 ```
 
-register capabilities for `vim.snippet`
+You may want to pass the capabilities to your lsp
 
 ```lua
-server_config = {
-    capabilities = vim.tbl_deep_extend(
+local capabilities = vim.tbl_deep_extend(
       'force',
       vim.lsp.protocol.make_client_capabilities(),
       require('epo').register_cap()
     )
-}
 ```
 
 ## Keymap
 
-Super <kbd>TAB</kbd> and <kbd>Shift-tab</kbd> bind tab and shift-tab for completion and snippet
-expand.
+Supercharge <kbd>TAB</kbd> and <kbd>Shift-tab</kbd> for completion and snippet expansion.
 
 ```lua
 vim.keymap.set('i', '<TAB>', function()
@@ -65,8 +60,5 @@ vim.keymap.set('i', '<C-e>', function()
   return '<C-e>'
 end, {expr = true})
 ```
-
-
-third param is fuzzy match enable.
 
 ## License MIT
