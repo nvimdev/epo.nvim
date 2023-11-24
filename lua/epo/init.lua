@@ -7,7 +7,8 @@ local ns = api.nvim_create_namespace('Epo')
 local match_fuzzy = false
 local signature = false
 local debounce_time = 100
-local snippet_path = nil
+local snippet_path, signature_border, kind_format
+
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
 local disable = nil
@@ -59,7 +60,7 @@ end
 
 local function lspkind(kind)
   local k = protocol.CompletionItemKind[kind] or 'Unknown'
-  return k:lower():sub(1, 1)
+  return kind_format(k)
 end
 
 local function show_info(bufnr)
@@ -113,7 +114,7 @@ local function signature_help(client, bufnr, lnum)
     lines = { unpack(lines, 1, 3) }
     fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
       close_events = {},
-      border = 'rounded',
+      border = signature_border,
     })
     vim.bo[fbuf].syntax = 'on'
 
@@ -516,6 +517,10 @@ local function setup(opt)
   debounce_time = opt.debounce_time or 50
   signature = opt.signature or false
   snippet_path = opt.snippet_path
+  signature_border = opt.signature_border or 'rounded'
+  kind_format = opt.kind_format or function(k)
+    return k:lower():sub(1, 1)
+  end
 
   -- Usually I just use one client for completion so just one
   api.nvim_create_autocmd('LspAttach', {

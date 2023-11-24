@@ -1,41 +1,63 @@
-## Epo
+## epo.nvim
 
-a blazing fast and minimal less than 300 lines. neovim lsp auto-completion plugin.
+Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
 
-**Need neovim nightly**
+**Needs neovim nightly**
 
+**This plugin would be much more feature-complete after [this pr](https://github.com/neovim/neovim/pull/24723) is merged**
 
 ## Usage
 
 ```lua
+-- suggested completeopt
+vim.opt.completeopt = "menu,menuone,noselect"
+
+-- default settings
 require('epo').setup({
-    -- default value of options.
+    -- fuzzy match
     fuzzy = false,
     -- increase this value can aviod trigger complete when delete character.
     debounce = 50,
     -- when completion confrim auto show a signature help floating window.
     signature = false,
-    -- extend vscode format snippet json files. like rust.json/typescriptreact.json/zig.json
+    -- vscode style json snippet path
     snippet_path = nil,
+    -- border for lsp signature popup, :h nvim_open_win
+    signature_border = 'rounded'
+    -- lsp kind formatting, k is kind string "Field", "Struct", "Keyword" etc.
+    kind_format = function(k)
+      return k:lower():sub(1, 1)
+    end
 })
 ```
 
-register capabilities for `vim.snippet`
+You may want to pass the capabilities to your lsp
 
 ```lua
-server_config = {
-    capabilities = vim.tbl_deep_extend(
+local capabilities = vim.tbl_deep_extend(
       'force',
       vim.lsp.protocol.make_client_capabilities(),
       require('epo').register_cap()
     )
-}
 ```
 
-## Keymap
+Completion menu look dull and boring? Your colorscheme may be missing these highlights:
 
-Super <kbd>TAB</kbd> and <kbd>Shift-tab</kbd> bind tab and shift-tab for completion and snippet
-expand.
+```
+Pmenu
+PmenuExtra
+PmenuSel
+PmenuKind
+PmenuKindSel
+PmenuExtraSel
+PmenuSbar
+PmenuThumb
+```
+
+<details>
+<summary>Click to show some mapping presets</summary>
+
+- <kbd>TAB</kbd> complete
 
 ```lua
 vim.keymap.set('i', '<TAB>', function()
@@ -66,7 +88,26 @@ vim.keymap.set('i', '<C-e>', function()
 end, {expr = true})
 ```
 
+- use `<cr>` to accept completion
 
-third param is fuzzy match enable.
+```lua
+-- For using enter as completion, may conflict with some autopair plugin
+vim.keymap.set("i", "<cr>", function()
+    if vim.fn.pumvisible() == 1 then
+        return "<C-y>"
+    end
+    return "<cr>"
+end, { expr = true, noremap = true })
+
+-- nvim-autopair compatibility
+vim.keymap.set("i", "<cr>", function()
+    if vim.fn.pumvisible() == 1 then
+        return "<C-y>"
+    end
+    return require("nvim-autopairs").autopairs_cr()
+end, { expr = true, noremap = true })
+```
+
+</details>
 
 ## License MIT
