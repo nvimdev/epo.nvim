@@ -338,7 +338,7 @@ local function completion_handler(_, result, ctx)
   prefix = prefix:lower()
 
   for _, item in
-  ipairs(vim.list_extend(compitems, context.snippets[vim.bo[ctx.bufnr].filetype] or {}))
+    ipairs(vim.list_extend(compitems, context.snippets[vim.bo[ctx.bufnr].filetype] or {}))
   do
     local entry = {
       abbr = item.label,
