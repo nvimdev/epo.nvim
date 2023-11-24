@@ -1,4 +1,5 @@
 ## epo.nvim
+[Screencast from 2023-11-24 12-51-25.webm](https://github.com/xiaoshihou514/epo.nvim/assets/108414369/0de9adc5-81ea-4b31-b42f-898fc95efd33)
 
 Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
 
