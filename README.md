@@ -1,7 +1,8 @@
 ## epo.nvim
-[Screencast from 2023-11-24 12-51-25.webm](https://github.com/xiaoshihou514/epo.nvim/assets/108414369/0de9adc5-81ea-4b31-b42f-898fc95efd33)
 
 Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
+
+[demo.webm](https://github.com/xiaoshihou514/epo.nvim/assets/108414369/e6df8be6-1cd3-4f53-96ba-023d785a0d1c)
 
 **Needs neovim nightly**
 
@@ -56,7 +57,7 @@ PmenuThumb
 ```
 
 <details>
-<summary>Click to show some mapping presets</summary>
+<summary>Click to show some config presets</summary>
 
 - <kbd>TAB</kbd> complete
 
@@ -89,6 +90,25 @@ vim.keymap.set('i', '<C-e>', function()
 end, {expr = true})
 ```
 
+- kind icons like in the demo
+```lua
+-- reference: onsails/lspkind.nvim
+local kind_icons = {
+    Text = "󰉿", Method = "󰆧", Function = "󰘧", Constructor = "", Field = "󰜢",
+    Variable = "󰀫", Class = "󰠱", Interface = "", Module = "", Property = "󰜢",
+    Unit = "󰑭", Value = "󰎠", Enum = "", Keyword = "󰌋", Snippet = "", Color = "󰏘",
+    File = "󰈙", Reference = "", Folder = "󰉋", EnumMember = "", Constant = "󰏿",
+    Struct = "", Event = "", Operator = "󰆕", TypeParameter = " ", Unknown = " ",
+}
+
+require("epo").setup {
+    kind_format = function(k)
+        return kind_icons[k] .. " " .. k
+    end
+}
+
+```
+
 - use `<cr>` to accept completion
 
 ```lua
@@ -107,8 +127,9 @@ vim.keymap.set("i", "<cr>", function()
     end
     return require("nvim-autopairs").autopairs_cr()
 end, { expr = true, noremap = true })
-```
 
+require("nvim-autopairs").setup({ map_cr = false })
+```
 </details>
 
 ## License MIT
