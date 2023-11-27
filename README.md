@@ -123,11 +123,10 @@ end, { expr = true, noremap = true })
 -- nvim-autopair compatibility
 vim.keymap.set("i", "<cr>", function()
     if vim.fn.pumvisible() == 1 then
-        return "<C-y>"
+        return vim.api.nvim_replace_termcodes("<C-y>", true, true, true)
     end
     return require("nvim-autopairs").autopairs_cr()
-end, { expr = true, noremap = true })
-
+end, { expr = true, noremap = true, replace_keycodes = false })
 require("nvim-autopairs").setup({ map_cr = false })
 ```
 </details>
