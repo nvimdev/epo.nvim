@@ -242,21 +242,15 @@ local function complete_ondone(bufnr)
         offset_snip = cp_item.insertText
       end
 
+      if cp_item.additionalTextEdits then
+        lsp.util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
+      end
+
       if offset_snip then
         offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
-      end
-
-      if cp_item.additionalTextEdits then
-        for _, edit in ipairs(cp_item.additionalTextEdits) do
-          local range = edit.range
-          if range.start.line == range['end'].line then
-            range['end'].line = range['end'].line + 1
-          end
-        end
-        lsp.util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
       end
 
       if signature then
