@@ -250,6 +250,12 @@ local function complete_ondone(bufnr)
       end
 
       if cp_item.additionalTextEdits then
+        for _, edit in ipairs(cp_item.additionalTextEdits) do
+          local range = edit.range
+          if range.start.line == range['end'].line then
+            range['end'].line = range['end'].line + 1
+          end
+        end
         lsp.util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
       end
 
