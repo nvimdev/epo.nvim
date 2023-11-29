@@ -189,6 +189,7 @@ local function complete_ondone(bufnr)
       if not cp_item then
         return
       end
+      --usually the first is main client for me.
       local client = lsp.get_clients({ id = context[args.buf].client_id })[1]
       if not client then
         return
@@ -196,16 +197,6 @@ local function complete_ondone(bufnr)
       local startidx = context[args.buf].startidx
       local lnum, col = unpack(api.nvim_win_get_cursor(0))
       local curline = api.nvim_get_current_line()
-
-      local total = api.nvim_buf_line_count(bufnr)
-      if cp_item.additionalTextEdits then
-        lsp.util.apply_text_edits(cp_item.additionalTextEdits, bufnr, 'utf-8')
-        local increase = api.nvim_buf_line_count(bufnr) - total
-        if cp_item.textEdit then
-          cp_item.textEdit.range.start.line = cp_item.textEdit.range.start.line + increase
-          cp_item.textEdit.range['end'].line = cp_item.textEdit.range['end'].line + increase
-        end
-      end
 
       local is_snippet = item.kind == 's'
         or cp_item.insertTextFormat == protocol.InsertTextFormat.Snippet
@@ -256,6 +247,10 @@ local function complete_ondone(bufnr)
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
+      end
+
+      if cp_item.additionalTextEdits then
+        lsp.util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
       end
 
       if signature then
