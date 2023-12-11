@@ -99,7 +99,7 @@ local function signature_help(client, bufnr, lnum)
   local params = util.make_position_params()
   local fwin, fbuf
   client.request(ms.textDocument_signatureHelp, params, function(err, result, ctx)
-    if err or not api.nvim_buf_is_valid(ctx.bufnr) then
+    if err or not result or not api.nvim_buf_is_valid(ctx.bufnr) then
       return
     end
     local triggers =
@@ -515,7 +515,7 @@ end
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
-  signature = opt.signature or false
+  signature = opt.signature or true
   snippet_path = opt.snippet_path
   signature_border = opt.signature_border or 'rounded'
   kind_format = opt.kind_format or function(k)
