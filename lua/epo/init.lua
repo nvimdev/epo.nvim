@@ -515,7 +515,7 @@ end
 local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
-  signature = opt.signature or true
+  signature = opt.signature or false
   snippet_path = opt.snippet_path
   signature_border = opt.signature_border or 'rounded'
   kind_format = opt.kind_format or function(k)
