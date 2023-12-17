@@ -4,10 +4,13 @@ local util = require('vim.lsp.util')
 local ms = protocol.Methods
 local group = api.nvim_create_augroup('Epo', { clear = true })
 local ns = api.nvim_create_namespace('Epo')
+local au = api.nvim_create_autocmd
 local match_fuzzy = false
 local signature = false
-local debounce_time = 100
+local debounce_time = 200
 local snippet_path, signature_border, kind_format
+local timer = nil
+local info_timer = nil
 
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
@@ -63,36 +66,23 @@ local function lspkind(kind)
   return kind_format(k)
 end
 
-local function show_info(bufnr)
-  local data = vim.fn.complete_info()
-  local item = vim.tbl_get(vim.v.event, 'completed_item')
-  if item.info and #item.info > 0 and data.preview_winid and data.preview_bufnr then
-    vim.wo[data.preview_winid].conceallevel = 2
-    vim.wo[data.preview_winid].concealcursor = 'niv'
-    vim.treesitter.start(data.preview_bufnr, 'markdown')
-  end
-  local tick = api.nvim_buf_get_changedtick(bufnr)
-
-  local selected = data.selected
-  if not item.info or #item.info == 0 then
-    local param =
-      vim.tbl_get(vim.v.event.completed_item, 'user_data', 'nvim', 'lsp', 'completion_item')
-    local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
-    client.request(ms.completionItem_resolve, param, function(_, result, ctx)
-      if not result or api.nvim_buf_get_changedtick(ctx.bufnr) ~= tick then
-        return
+local function show_info(bufnr, curitem, selected)
+  local param = vim.tbl_get(curitem, 'user_data', 'nvim', 'lsp', 'completion_item')
+  local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
+  client.request(ms.completionItem_resolve, param, function(_, result)
+    if not result then
+      return
+    end
+    local value = vim.tbl_get(result, 'documentation', 'value')
+    if value then
+      local wininfo = api.nvim_complete_set(selected, { info = value })
+      if wininfo.winid and wininfo.bufnr then
+        vim.wo[wininfo.winid].conceallevel = 2
+        vim.wo[wininfo.winid].concealcursor = 'niv'
+        vim.treesitter.start(wininfo.bufnr, 'markdown')
       end
-      local value = vim.tbl_get(result, 'documentation', 'value')
-      if value then
-        local wininfo = api.nvim_complete_set(selected, { info = value })
-        if wininfo.winid and wininfo.bufnr then
-          vim.wo[wininfo.winid].conceallevel = 2
-          vim.wo[wininfo.winid].concealcursor = 'niv'
-          vim.treesitter.start(wininfo.bufnr, 'markdown')
-        end
-      end
-    end, bufnr)
-  end
+    end
+  end, bufnr)
 end
 
 local function complete_changed(bufnr)
@@ -100,7 +90,29 @@ local function complete_changed(bufnr)
     buffer = bufnr,
     group = group,
     callback = function(args)
-      show_info(args.buf)
+      if info_timer and info_timer:is_active() and not info_timer:is_closing() then
+        info_timer:close()
+      end
+      local curitem = vim.v.event.completed_item
+      if not curitem then
+        return
+      end
+      local data = vim.fn.complete_info()
+      if curitem.info and #curitem.info > 0 and data.preview_winid and data.preview_bufnr then
+        vim.wo[data.preview_winid].conceallevel = 2
+        vim.wo[data.preview_winid].concealcursor = 'niv'
+        vim.treesitter.start(data.preview_bufnr, 'markdown')
+        return
+      end
+
+      info_timer = uv.new_timer()
+      info_timer:start(
+        100,
+        0,
+        vim.schedule_wrap(function()
+          show_info(args.buf, curitem, data.selected)
+        end)
+      )
     end,
   })
 end
@@ -430,38 +442,34 @@ local function completion_handler(_, result, ctx)
   end
 end
 
-local function completion_request(client, bufnr, trigger_kind, trigger_char)
+local function debounce(client, bufnr, triggerKind, triggerChar)
+  if timer and timer:is_active() then
+    timer:close()
+    timer:stop()
+    timer = nil
+  end
+
   local params = util.make_position_params(api.nvim_get_current_win(), client.offset_encoding)
   params.context = {
-    triggerKind = trigger_kind,
-    triggerCharacter = trigger_char,
+    triggerKind = triggerKind,
+    triggerCharacter = triggerChar,
   }
-  client.request(ms.textDocument_completion, params, completion_handler, bufnr)
-end
-
-local function debounce(client, bufnr, triggerKind, triggerChar)
-  if not context[bufnr] then
-    return
-  end
-  if context[bufnr].timer and context[bufnr].timer:is_active() then
-    context[bufnr].timer:close()
-    context[bufnr].timer:stop()
-    context[bufnr].timer = nil
-  end
-  context[bufnr].timer = uv.new_timer()
-  context[bufnr].timer:start(debounce_time, 0, function()
-    vim.schedule(function()
-      completion_request(client, bufnr, triggerKind, triggerChar)
+  timer = uv.new_timer()
+  timer:start(
+    debounce_time,
+    0,
+    vim.schedule_wrap(function()
+      client.request(ms.textDocument_completion, params, completion_handler, bufnr)
     end)
-  end)
+  )
 end
 
 local function auto_complete(client, bufnr)
-  api.nvim_create_autocmd('TextChangedI', {
+  au('TextChangedI', {
     group = group,
     buffer = bufnr,
     callback = function(args)
-      if disable then
+      if disable or vim.fn.pumvisible() == 1 then
         disable = false
         return
       end
@@ -531,7 +539,7 @@ local function setup(opt)
   api.nvim_set_option_value('completeopt', 'menu,noinsert,noselect,popup', { scope = 'global' })
 
   -- Usually I just use one client for completion so just one
-  api.nvim_create_autocmd('LspAttach', {
+  au('LspAttach', {
     group = group,
     callback = function(args)
       local clients = lsp.get_clients({
