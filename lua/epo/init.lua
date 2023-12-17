@@ -64,8 +64,15 @@ local function lspkind(kind)
 end
 
 local function show_info(bufnr)
-  local info = vim.tbl_get(vim.v.event, 'completed_item', 'info')
   local data = vim.fn.complete_info()
+  if data.preview_winid and data.preview_bufnr then
+    vim.wo[data.preview_winid].conceallevel = 2
+    vim.wo[data.preview_winid].concealcursor = 'niv'
+    vim.treesitter.start(data.preview_bufnr, 'markdown')
+    return
+  end
+
+  local info = vim.tbl_get(vim.v.event, 'completed_item', 'info')
   local selected = data.selected
   if not info or #info == 0 then
     local param =
@@ -76,10 +83,13 @@ local function show_info(bufnr)
         return
       end
       local value = vim.tbl_get(result, 'documentation', 'value')
-      local kind = vim.tbl_get(result, 'documentation', 'kind')
       if value then
-        local wininfo = api.nvim_complete_set_info(selected, value)
-        api.nvim_set_option_value('filetype', kind or '', { buf = wininfo.bufnr })
+        local wininfo = api.nvim_complete_set(selected, { info = value })
+        if wininfo.winid and wininfo.bufnr then
+          vim.wo[wininfo.winid].conceallevel = 2
+          vim.wo[wininfo.winid].concealcursor = 'niv'
+          vim.treesitter.start(wininfo.bufnr, 'markdown')
+        end
       end
     end, bufnr)
   end
@@ -483,10 +493,6 @@ local function auto_complete(client, bufnr)
       debounce(client, args.buf, triggerKind, triggerChar)
     end,
   })
-  -- local build = vim.version().build
-  -- if build:match('^g') or build:match('dirty') then
-  --   api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
-  -- end
 end
 
 local function register_cap()
@@ -521,6 +527,8 @@ local function setup(opt)
   kind_format = opt.kind_format or function(k)
     return k:lower():sub(1, 1)
   end
+  --make sure your neovim is newer enough
+  api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
 
   -- Usually I just use one client for completion so just one
   api.nvim_create_autocmd('LspAttach', {
