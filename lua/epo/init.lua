@@ -536,7 +536,7 @@ local function setup(opt)
     return k:lower():sub(1, 1)
   end
   --make sure your neovim is newer enough
-  api.nvim_set_option_value('completeopt', 'menu,noinsert,noselect,popup', { scope = 'global' })
+  api.nvim_set_option_value('completeopt', 'menu,menuone,noinsert,', { scope = 'global' })
 
   -- Usually I just use one client for completion so just one
   au('LspAttach', {
