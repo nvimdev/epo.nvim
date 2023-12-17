@@ -65,21 +65,21 @@ end
 
 local function show_info(bufnr)
   local data = vim.fn.complete_info()
-  if data.preview_winid and data.preview_bufnr then
+  local item = vim.tbl_get(vim.v.event, 'completed_item')
+  if item.info and #item.info > 0 and data.preview_winid and data.preview_bufnr then
     vim.wo[data.preview_winid].conceallevel = 2
     vim.wo[data.preview_winid].concealcursor = 'niv'
     vim.treesitter.start(data.preview_bufnr, 'markdown')
-    return
   end
+  local tick = api.nvim_buf_get_changedtick(bufnr)
 
-  local info = vim.tbl_get(vim.v.event, 'completed_item', 'info')
   local selected = data.selected
-  if not info or #info == 0 then
+  if not item.info or #item.info == 0 then
     local param =
       vim.tbl_get(vim.v.event.completed_item, 'user_data', 'nvim', 'lsp', 'completion_item')
     local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
-    client.request(ms.completionItem_resolve, param, function(_, result)
-      if not result then
+    client.request(ms.completionItem_resolve, param, function(_, result, ctx)
+      if not result or api.nvim_buf_get_changedtick(ctx.bufnr) ~= tick then
         return
       end
       local value = vim.tbl_get(result, 'documentation', 'value')
@@ -528,7 +528,7 @@ local function setup(opt)
     return k:lower():sub(1, 1)
   end
   --make sure your neovim is newer enough
-  api.nvim_set_option_value('completeopt', 'menu,noinsert,popup', { scope = 'global' })
+  api.nvim_set_option_value('completeopt', 'menu,noinsert,noselect,popup', { scope = 'global' })
 
   -- Usually I just use one client for completion so just one
   api.nvim_create_autocmd('LspAttach', {
