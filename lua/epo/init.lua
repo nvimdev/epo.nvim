@@ -165,28 +165,25 @@ local function signature_help(client, bufnr, lnum)
       end,
     })
 
+    ---@diagnostic disable-next-line: invisible
+    local count = vim.tbl_count(vim.snippet._session.tabstops)
     api.nvim_create_autocmd({ 'CursorMovedI', 'CursorMoved' }, {
       buffer = ctx.bufnr,
       group = g,
-      callback = function()
+      callback = function(args)
         local curline = api.nvim_win_get_cursor(0)[1]
-        if curline ~= lnum and api.nvim_win_is_valid(fwin) then
-          api.nvim_win_close(fwin, true)
-          api.nvim_del_augroup_by_id(g)
+        local is_out = false
+        if
+          args.event == 'CursorMovedI'
+          ---@diagnostic disable-next-line: invisible
+          and vim.snippet._session
+          ---@diagnostic disable-next-line: invisible
+          and vim.snippet._session.current_tabstop.index + 1 == count
+        then
+          is_out = true
         end
-      end,
-    })
-
-    ---@diagnostic disable-next-line: invisible
-    local count = vim.tbl_count(vim.snippet._session.tabstops)
-    api.nvim_create_autocmd('CursorMovedI', {
-      buffer = ctx.bufnr,
-      group = g,
-      callback = function()
-        ---@diagnostic disable-next-line: invisible
-        local curindex = vim.snippet._session.current_tabstop.index + 1
-        if curindex == count then
-          pcall(api.nvim_win_close, fwin, true)
+        if (curline ~= lnum and api.nvim_win_is_valid(fwin)) or is_out then
+          api.nvim_win_close(fwin, true)
           api.nvim_del_augroup_by_id(g)
         end
       end,
