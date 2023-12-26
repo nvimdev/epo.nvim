@@ -70,7 +70,15 @@ local function show_info(bufnr, curitem, selected)
   local param = vim.tbl_get(curitem, 'user_data', 'nvim', 'lsp', 'completion_item')
   local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
   client.request(ms.completionItem_resolve, param, function(_, result)
-    if not result then
+    local data = vim.fn.complete_info()
+    if
+      not result
+      or not data.items
+      or (data.items[data.selected + 1] and data.items[data.selected + 1].word ~= curitem.word)
+    then
+      if data.preview_winid and api.nvim_win_is_valid(data.preview_winid) then
+        api.nvim_win_close(data.preview_winid, true)
+      end
       return
     end
     local value = vim.tbl_get(result, 'documentation', 'value')
@@ -433,9 +441,6 @@ local function completion_handler(_, result, ctx)
   if mode == 'i' or mode == 'ic' then
     vfn.complete(startcol, entrys)
     complete_ondone(ctx.bufnr)
-    if vim.tbl_contains(vim.opt.completeopt:get(), 'popup') then
-      complete_changed(ctx.bufnr)
-    end
   end
 end
 
@@ -533,7 +538,7 @@ local function setup(opt)
     return k:lower():sub(1, 1)
   end
   --make sure your neovim is newer enough
-  api.nvim_set_option_value('completeopt', 'menu,menuone,noinsert,', { scope = 'global' })
+  api.nvim_set_option_value('completeopt', 'menu,menuone,noinsert', { scope = 'global' })
 
   -- Usually I just use one client for completion so just one
   au('LspAttach', {
@@ -559,6 +564,10 @@ local function setup(opt)
 
       if snippet_path then
         extend_snippets(vim.bo[args.buf].filetype)
+      end
+
+      if vim.tbl_contains(opt.compleopt:get(), 'popup') then
+        complete_changed(args.buf)
       end
     end,
   })
