@@ -566,7 +566,7 @@ local function setup(opt)
         extend_snippets(vim.bo[args.buf].filetype)
       end
 
-      if vim.tbl_contains(opt.completeopt:get(), 'popup') then
+      if vim.tbl_contains(vim.opt.completeopt:get(), 'popup') then
         complete_changed(args.buf)
       end
     end,
