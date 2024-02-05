@@ -323,7 +323,7 @@ local function extend_snippets(ft)
           for k, v in pairs(t) do
             local e = {
               label = k,
-              insertText = v.body[1],
+              insertText = type(v.body) == 'string' and v.body or table.concat(v.body, '\n'),
               kind = 15,
               insertTextFormat = 2,
             }
