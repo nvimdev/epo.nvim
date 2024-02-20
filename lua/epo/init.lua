@@ -168,6 +168,9 @@ local function signature_help(client, bufnr, lnum)
         local index = vim.snippet._session.current_tabstop.index
         if index and data.parameters[index] and data.parameters[index].label then
           api.nvim_buf_clear_namespace(fbuf, ns, line, line + 1)
+          if type(data.parameters[index].label) ~= 'table' then
+            return
+          end
           api.nvim_buf_add_highlight(fbuf, ns, hi, line, unpack(data.parameters[index].label))
         end
       end,
