@@ -37,6 +37,16 @@ local function timer_remove(t)
   end
 end
 
+--- @param fn function
+local function timer_create(time, fn)
+  local t = uv.new_timer()
+  if not t then
+    return
+  end
+  t:start(time, 0, vim.schedule_wrap(fn))
+  return t
+end
+
 local function charidx_without_comp(bufnr, pos)
   if pos.character <= 0 then
     return pos.character
@@ -63,11 +73,9 @@ local function make_valid_word(str_arg)
   if valid == nil or valid == '' then
     return str
   end
-
   if string.match(valid, ':$') then
     return string.sub(valid, 1, -3)
   end
-
   return valid
 end
 
@@ -138,16 +146,10 @@ local function complete_changed(bufnr)
       if not citem then
         return
       end
-      info_timer = uv.new_timer()
       local data = vim.fn.complete_info()
-      ---@diagnostic disable-next-line: need-check-nil
-      info_timer:start(
-        100,
-        0,
-        vim.schedule_wrap(function()
-          show_info(args.buf, citem, data.selected)
-        end)
-      )
+      info_timer = timer_create(100, function()
+        show_info(args.buf, citem, data.selected)
+      end)
     end,
   })
 end
@@ -160,9 +162,8 @@ local function signature_help(client, bufnr, lnum)
     end
     local triggers =
       vim.tbl_get(client.server_capabilities, 'signatureHelpProvider', 'triggerCharacters')
-    local ft = vim.bo[ctx.bufnr].filetype
-    local lines, hl = util.convert_signature_help_to_markdown_lines(result, ft, triggers)
-    ---@diagnostic disable-next-line: param-type-mismatch
+    local lines, hl =
+      util.convert_signature_help_to_markdown_lines(result, vim.bo[ctx.bufnr].filetype, triggers)
     if not lines or vim.tbl_isempty(lines) then
       return
     end
@@ -184,12 +185,10 @@ local function signature_help(client, bufnr, lnum)
       buffer = ctx.bufnr,
       group = g,
       callback = function()
-        ---@diagnostic disable-next-line: invisible
         if not data.parameters or not data.parameters or not vim.snippet._session then
           return
         end
-        ---@diagnostic disable-next-line: invisible
-        local index = vim.snippet._session.current_tabstop.index
+        local index = vim.tbl_get(vim.snippet, '_session', 'current_tabstop', 'index') or 0
         if index and data.parameters[index] and data.parameters[index].label then
           api.nvim_buf_clear_namespace(fbuf, ns, line, line + 1)
           if type(data.parameters[index].label) ~= 'table' then
@@ -299,7 +298,6 @@ local function complete_ondone(bufnr)
         end
       end
       event_delete('CompleteChanged', args.buf)
-
       if signature then
         local clients =
           vim.lsp.get_clients({ bufnr = args.buf, method = ms.textDocument_signatureHelp })
@@ -441,17 +439,9 @@ local function debounce(client, bufnr, triggerKind, triggerChar)
     triggerKind = triggerKind,
     triggerCharacter = triggerChar,
   }
-  timer = uv.new_timer()
-  if not timer then
-    return
-  end
-  timer:start(
-    debounce_time,
-    0,
-    vim.schedule_wrap(function()
-      client.request(ms.textDocument_completion, params, completion_handler, bufnr)
-    end)
-  )
+  timer = timer_create(debounce_time, function()
+    client.request(ms.textDocument_completion, params, completion_handler, bufnr)
+  end)
 end
 
 local function auto_complete(client, bufnr)
