@@ -9,8 +9,8 @@ Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
 ## Usage
 
 ```lua
--- suggested completeopt
-vim.opt.completeopt = "menu,menuone,noselect"
+-- the default completetopt set by epo
+vim.opt.completeopt = "menu,menuone,noselect,popup"
 
 -- default settings
 require('epo').setup({
@@ -20,8 +20,6 @@ require('epo').setup({
     debounce = 50,
     -- when completion confrim auto show a signature help floating window.
     signature = false,
-    -- vscode style json snippet path
-    snippet_path = nil,
     -- border for lsp signature popup, :h nvim_open_win
     signature_border = 'rounded',
     -- lsp kind formatting, k is kind string "Field", "Struct", "Keyword" etc.

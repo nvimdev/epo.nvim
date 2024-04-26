@@ -8,9 +8,10 @@ local au = api.nvim_create_autocmd
 local match_fuzzy = false
 local signature = false
 local debounce_time = 200
-local snippet_path, signature_border, kind_format
-local timer = nil
-local info_timer = nil
+local signature_border, kind_format
+
+local timer -- [[uv_timer_t]]
+local info_timer --[[uv_timer_t]]
 
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
@@ -25,6 +26,15 @@ local function context_init(bufnr, id)
     timer = nil,
     client_id = id,
   }
+end
+
+--- @param t uv.uv_timer_t
+local function timer_remove(t)
+  if t and t:is_active() and not t:is_closing() then
+    t:stop()
+    t:close()
+    t = nil
+  end
 end
 
 local function charidx_without_comp(bufnr, pos)
@@ -66,6 +76,12 @@ local function lspkind(kind)
   return kind_format(k)
 end
 
+local function close_popup_win(winid)
+  if winid and api.nvim_win_is_valid(winid) then
+    api.nvim_win_close(winid, true)
+  end
+end
+
 local function show_info(bufnr, curitem, selected)
   local param = vim.tbl_get(curitem, 'user_data', 'nvim', 'lsp', 'completion_item')
   local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
@@ -76,21 +92,40 @@ local function show_info(bufnr, curitem, selected)
       or not data.items
       or (data.items[data.selected + 1] and data.items[data.selected + 1].word ~= curitem.word)
     then
-      if data.preview_winid and api.nvim_win_is_valid(data.preview_winid) then
-        api.nvim_win_close(data.preview_winid, true)
-      end
+      close_popup_win(data.preview_winid)
       return
     end
     local value = vim.tbl_get(result, 'documentation', 'value')
-    if value then
-      local wininfo = api.nvim_complete_set(selected, { info = value })
-      if wininfo.winid and wininfo.bufnr then
-        vim.wo[wininfo.winid].conceallevel = 2
-        vim.wo[wininfo.winid].concealcursor = 'niv'
-        vim.treesitter.start(wininfo.bufnr, 'markdown')
-      end
+    if not value or #value == 0 then
+      close_popup_win(data.preview_winid)
+      return
     end
+    local wininfo = api.nvim_complete_set(selected, { info = value })
+    if vim.tbl_isempty(wininfo) then
+      return
+    end
+    vim.wo[wininfo.winid].conceallevel = 2
+    vim.wo[wininfo.winid].concealcursor = 'niv'
+    vim.treesitter.start(wininfo.bufnr, 'markdown')
   end, bufnr)
+end
+
+---check event has registered
+---@param e string event
+---@parma bufnr integer buffer id
+---@return boolean when true is created, otherwise is false.
+local function event_has_created(e, bufnr)
+  return #api.nvim_get_autocmds({ group = group, buffer = bufnr, event = e }) > 0
+end
+
+---delete an event in group.
+---@param e string event
+---@param bufnr integer buffer id
+local function event_delete(e, bufnr)
+  local result = api.nvim_get_autocmds({ group = group, buffer = bufnr, event = e })
+  for _, item in ipairs(result) do
+    api.nvim_del_autocmd(item.id)
+  end
 end
 
 local function complete_changed(bufnr)
@@ -98,27 +133,19 @@ local function complete_changed(bufnr)
     buffer = bufnr,
     group = group,
     callback = function(args)
-      if info_timer and info_timer:is_active() and not info_timer:is_closing() then
-        info_timer:close()
-      end
-      local curitem = vim.v.event.completed_item
-      if not curitem then
+      timer_remove(info_timer)
+      local citem = vim.v.event.completed_item
+      if not citem then
         return
       end
-      local data = vim.fn.complete_info()
-      if curitem.info and #curitem.info > 0 and data.preview_winid and data.preview_bufnr then
-        vim.wo[data.preview_winid].conceallevel = 2
-        vim.wo[data.preview_winid].concealcursor = 'niv'
-        vim.treesitter.start(data.preview_bufnr, 'markdown')
-        return
-      end
-
       info_timer = uv.new_timer()
+      local data = vim.fn.complete_info()
+      ---@diagnostic disable-next-line: need-check-nil
       info_timer:start(
         100,
         0,
         vim.schedule_wrap(function()
-          show_info(args.buf, curitem, data.selected)
+          show_info(args.buf, citem, data.selected)
         end)
       )
     end,
@@ -127,7 +154,6 @@ end
 
 local function signature_help(client, bufnr, lnum)
   local params = util.make_position_params()
-  local fwin, fbuf
   client.request(ms.textDocument_signatureHelp, params, function(err, result, ctx)
     if err or not result or not api.nvim_buf_is_valid(ctx.bufnr) then
       return
@@ -142,12 +168,10 @@ local function signature_help(client, bufnr, lnum)
     end
     -- just show parmas in signature help
     lines = { unpack(lines, 1, 3) }
-    fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
+    local fbuf, fwin = util.open_floating_preview(lines, 'markdown', {
       close_events = {},
       border = signature_border,
     })
-    vim.bo[fbuf].syntax = 'on'
-
     local hi = 'LspSignatureActiveParameter'
     local line = vim.startswith(lines[1], '```') and 1 or 0
     if hl then
@@ -175,25 +199,17 @@ local function signature_help(client, bufnr, lnum)
         end
       end,
     })
-
-    ---@diagnostic disable-next-line: invisible
-    local count = vim.tbl_count(vim.snippet._session.tabstops)
+    local count = vim.tbl_count(vim.snippet._session.tabstops) or 0
     api.nvim_create_autocmd({ 'CursorMovedI', 'CursorMoved' }, {
       buffer = ctx.bufnr,
       group = g,
       callback = function(args)
         local curline = api.nvim_win_get_cursor(0)[1]
-        local is_out = false
+        local tabstop_idx = vim.tbl_get(vim.snippet, '_session', 'current_tabstop', 'index') or 0
         if
-          args.event == 'CursorMovedI'
-          ---@diagnostic disable-next-line: invisible
-          and vim.snippet._session
-          ---@diagnostic disable-next-line: invisible
-          and vim.snippet._session.current_tabstop.index + 1 == count
+          (curline ~= lnum and api.nvim_win_is_valid(fwin))
+          or (args.event == 'CursorMovedI' and tabstop_idx == count)
         then
-          is_out = true
-        end
-        if (curline ~= lnum and api.nvim_win_is_valid(fwin)) or is_out then
           api.nvim_win_close(fwin, true)
           api.nvim_del_augroup_by_id(g)
         end
@@ -262,7 +278,7 @@ local function complete_ondone(bufnr)
           )
 
           range['end'].character = api.nvim_win_get_cursor(0)[2]
-          lsp.util.apply_text_edits({ cp_item.textEdit }, bufnr, client.offset_encoding)
+          util.apply_text_edits({ cp_item.textEdit }, bufnr, client.offset_encoding)
           api.nvim_win_set_cursor(
             0,
             { lnum, range['end'].character + #newText + extra - (startidx - range.start.character) }
@@ -273,7 +289,7 @@ local function complete_ondone(bufnr)
       end
 
       if cp_item.additionalTextEdits then
-        lsp.util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
+        util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
       end
 
       if offset_snip then
@@ -282,6 +298,7 @@ local function complete_ondone(bufnr)
           vim.snippet.expand(offset_snip)
         end
       end
+      event_delete('CompleteChanged', args.buf)
 
       if signature then
         local clients =
@@ -289,12 +306,10 @@ local function complete_ondone(bufnr)
         if not clients or #clients == 0 then
           return
         end
-        local line = api.nvim_get_current_line()
-        local char = line:sub(col + 1, col + 1)
         if
           vim.tbl_contains(
             clients[1].server_capabilities.signatureHelpProvider.triggerCharacters,
-            char
+            api.nvim_get_current_line():sub(col + 1, col + 1)
           )
         then
           signature_help(clients[1], args.buf, lnum)
@@ -304,49 +319,14 @@ local function complete_ondone(bufnr)
   })
 end
 
-local function extend_snippets(ft)
-  local fname = vim.fs.joinpath(snippet_path, ('%s.json'):format(ft))
-  if not snippet_path or context.snippets[ft] or not uv.fs_stat(fname) then
-    return
-  end
-  local chunks = {}
-  uv.fs_open(fname, 'r', 438, function(err, fd)
-    assert(not err, err)
-    uv.fs_fstat(fd, function(err, stat)
-      assert(not err, err)
-      uv.fs_read(fd, stat.size, 0, function(err, data)
-        assert(not err, err)
-        if data then
-          chunks[#chunks + 1] = data
-        end
-        uv.fs_close(fd, function(err)
-          assert(not err, err)
-          local t = vim.json.decode(table.concat(chunks))
-          context.snippets[ft] = {}
-          for k, v in pairs(t) do
-            local e = {
-              label = k,
-              insertText = type(v.body) == 'string' and v.body or table.concat(v.body, '\n'),
-              kind = 15,
-              insertTextFormat = 2,
-            }
-            table.insert(context.snippets[ft], e)
-          end
-        end)
-      end)
-    end)
-  end)
-end
-
 local function completion_handler(_, result, ctx)
   local client = lsp.get_clients({ id = ctx.client_id })
   if not result or not client or not api.nvim_buf_is_valid(ctx.bufnr) then
     return
   end
   local entrys = {}
-
   local compitems
-  if vim.tbl_islist(result) then
+  if vim.islist(result) then
     compitems = result
   else
     compitems = result.items
@@ -367,9 +347,7 @@ local function completion_handler(_, result, ctx)
   local startcol = start_idx + 1
   prefix = prefix:lower()
 
-  for _, item in
-    ipairs(vim.list_extend(compitems, context.snippets[vim.bo[ctx.bufnr].filetype] or {}))
-  do
+  for _, item in ipairs(compitems) do
     local entry = {
       abbr = item.label,
       kind = lspkind(item.kind),
@@ -443,23 +421,30 @@ local function completion_handler(_, result, ctx)
   local mode = api.nvim_get_mode()['mode']
   if mode == 'i' or mode == 'ic' then
     vfn.complete(startcol, entrys)
-    complete_ondone(ctx.bufnr)
+    if
+      vim.tbl_contains(vim.opt.completeopt:get(), 'popup')
+      and not event_has_created('CompleteChanged', ctx.bufnr)
+    then
+      complete_changed(ctx.bufnr)
+    end
+
+    if not event_has_created('CompleteDone', ctx.bufnr) then
+      complete_ondone(ctx.bufnr)
+    end
   end
 end
 
 local function debounce(client, bufnr, triggerKind, triggerChar)
-  if timer and timer:is_active() then
-    timer:close()
-    timer:stop()
-    timer = nil
-  end
-
+  timer_remove(timer)
   local params = util.make_position_params(api.nvim_get_current_win(), client.offset_encoding)
   params.context = {
     triggerKind = triggerKind,
     triggerCharacter = triggerChar,
   }
   timer = uv.new_timer()
+  if not timer then
+    return
+  end
   timer:start(
     debounce_time,
     0,
@@ -535,13 +520,12 @@ local function setup(opt)
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
   signature = opt.signature or false
-  snippet_path = opt.snippet_path
   signature_border = opt.signature_border or 'rounded'
   kind_format = opt.kind_format or function(k)
     return k:lower():sub(1, 1)
   end
   --make sure your neovim is newer enough
-  api.nvim_set_option_value('completeopt', 'menu,menuone,noinsert', { scope = 'global' })
+  api.nvim_set_option_value('completeopt', 'menu,menuone,noinsert,popup', { scope = 'global' })
 
   -- Usually I just use one client for completion so just one
   au('LspAttach', {
@@ -564,14 +548,6 @@ local function setup(opt)
         return
       end
       auto_complete(clients[1], args.buf)
-
-      if snippet_path then
-        extend_snippets(vim.bo[args.buf].filetype)
-      end
-
-      if vim.tbl_contains(vim.opt.completeopt:get(), 'popup') then
-        complete_changed(args.buf)
-      end
     end,
   })
 end
