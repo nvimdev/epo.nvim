@@ -4,8 +4,6 @@ Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
 
 **Needs neovim nightly**
 
-**This plugin would be much more feature-complete after [this pr](https://github.com/neovim/neovim/pull/24723) is merged**
-
 ## Usage
 
 ```lua
