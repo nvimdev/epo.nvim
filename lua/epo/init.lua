@@ -33,6 +33,7 @@ local function timer_remove(t)
   if t and t:is_active() and not t:is_closing() then
     t:stop()
     t:close()
+    ---@diagnostic disable-next-line: cast-local-type
     t = nil
   end
 end
@@ -90,8 +91,25 @@ local function close_popup_win(winid)
   end
 end
 
+local function popup_markdown_set(wininfo)
+  vim.wo[wininfo.winid].conceallevel = 2
+  vim.wo[wininfo.winid].concealcursor = 'niv'
+  vim.treesitter.start(wininfo.bufnr, 'markdown')
+end
+
 local function show_info(bufnr, curitem, selected)
   local param = vim.tbl_get(curitem, 'user_data', 'nvim', 'lsp', 'completion_item')
+  -- snippet preview in info
+  if curitem.kind == 's' then
+    local lang = vim.treesitter.language.get_lang(vim.bo[bufnr].filetype)
+    local info = ('```' .. lang .. '\n%s' .. '```'):format(
+      lsp._snippet_grammar.parse(param.insertText)
+    )
+    local wininfo = api.nvim_complete_set(selected, { info = info })
+    popup_markdown_set(wininfo)
+    return
+  end
+
   local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
   client.request(ms.completionItem_resolve, param, function(_, result)
     local data = vim.fn.complete_info()
@@ -112,9 +130,7 @@ local function show_info(bufnr, curitem, selected)
     if vim.tbl_isempty(wininfo) then
       return
     end
-    vim.wo[wininfo.winid].conceallevel = 2
-    vim.wo[wininfo.winid].concealcursor = 'niv'
-    vim.treesitter.start(wininfo.bufnr, 'markdown')
+    popup_markdown_set(wininfo)
   end, bufnr)
 end
 
