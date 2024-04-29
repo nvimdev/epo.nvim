@@ -105,9 +105,11 @@ local function show_info(bufnr, curitem, selected)
   -- snippet preview in info
   if curitem.kind == 's' then
     local lang = vim.treesitter.language.get_lang(vim.bo[bufnr].filetype)
-    local info = ('```' .. lang .. '\n%s' .. '```'):format(
-      lsp._snippet_grammar.parse(param.insertText)
-    )
+    local ok, text = pcall(lsp._snippet_grammar.parse, param.insertText)
+    if not ok then
+      return
+    end
+    local info = ('```' .. lang .. '\n%s' .. '\n```'):format(text)
     local wininfo = api.nvim_complete_set(selected, { info = info })
     popup_markdown_set(wininfo)
     return
