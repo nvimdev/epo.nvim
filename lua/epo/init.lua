@@ -92,6 +92,9 @@ local function close_popup_win(winid)
 end
 
 local function popup_markdown_set(wininfo)
+  if vim.tbl_isempty(wininfo) then
+    return
+  end
   vim.wo[wininfo.winid].conceallevel = 2
   vim.wo[wininfo.winid].concealcursor = 'niv'
   vim.treesitter.start(wininfo.bufnr, 'markdown')
@@ -127,9 +130,6 @@ local function show_info(bufnr, curitem, selected)
       return
     end
     local wininfo = api.nvim_complete_set(selected, { info = value })
-    if vim.tbl_isempty(wininfo) then
-      return
-    end
     popup_markdown_set(wininfo)
   end, bufnr)
 end
