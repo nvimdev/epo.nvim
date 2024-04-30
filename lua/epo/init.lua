@@ -110,7 +110,7 @@ local function show_info(bufnr, curitem, selected)
       return
     end
     local info = ('```' .. lang .. '\n%s' .. '\n```'):format(text)
-    local wininfo = api.nvim_complete_set(selected, { info = info })
+    local wininfo = api.nvim__complete_set(selected, { info = info })
     popup_markdown_set(wininfo)
     return
   end
@@ -131,7 +131,7 @@ local function show_info(bufnr, curitem, selected)
       close_popup_win(data.preview_winid)
       return
     end
-    local wininfo = api.nvim_complete_set(selected, { info = value })
+    local wininfo = api.nvim__complete_set(selected, { info = value })
     popup_markdown_set(wininfo)
   end, bufnr)
 end
