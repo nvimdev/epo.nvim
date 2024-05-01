@@ -92,7 +92,7 @@ local function close_popup_win(winid)
 end
 
 local function popup_markdown_set(wininfo)
-  if vim.tbl_isempty(wininfo) or not api.nvim_win_is_valid(wininfo.winid) then
+  if vim.tbl_isempty(wininfo) or (wininfo.winid and not api.nvim_win_is_valid(wininfo.winid)) then
     return
   end
   vim.wo[wininfo.winid].conceallevel = 2
