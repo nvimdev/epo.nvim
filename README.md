@@ -10,21 +10,25 @@ Blazingly fast, minimal lsp auto-completion and snippet plugin for neovim.
 -- the default completetopt set by epo
 vim.opt.completeopt = "menu,menuone,noselect,popup"
 
--- default settings
-require('epo').setup({
-    -- fuzzy match
-    fuzzy = false,
-    -- increase this value can aviod trigger complete when delete character.
-    debounce = 50,
-    -- when completion confrim auto show a signature help floating window.
-    signature = false,
-    -- border for lsp signature popup, :h nvim_open_win
-    signature_border = 'rounded',
-    -- lsp kind formatting, k is kind string "Field", "Struct", "Keyword" etc.
-    kind_format = function(k)
-      return k:lower():sub(1, 1)
-    end
-})
+-- use default settings
+require('epo').setup()
+```
+
+options in setup param with default value
+
+```lua
+-- fuzzy match
+fuzzy = false,
+-- increase this value can aviod trigger complete when delete character.
+debounce = 50,
+-- when completion confrim auto show a signature help floating window.
+signature = false,
+-- border for lsp signature popup, :h nvim_open_win
+signature_border = 'rounded',
+-- lsp kind formatting, k is kind string "Field", "Struct", "Keyword" etc.
+kind_format = function(k)
+  return k:lower():sub(1, 1)
+end
 ```
 
 You may want to pass the capabilities to your lsp

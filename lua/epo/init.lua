@@ -533,6 +533,7 @@ local function register_cap()
 end
 
 local function setup(opt)
+  opt = opt or {}
   match_fuzzy = opt.fuzzy or false
   debounce_time = opt.debounce_time or 50
   signature = opt.signature or false
