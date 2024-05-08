@@ -7,7 +7,7 @@ local ns = api.nvim_create_namespace('Epo')
 local au = api.nvim_create_autocmd
 local match_fuzzy = false
 local signature = false
-local debounce_time = 200
+local debounce_time = 150
 local signature_border, kind_format
 
 local timer -- [[uv_timer_t]]
@@ -16,9 +16,7 @@ local info_timer --[[uv_timer_t]]
 -- Ctrl-Y will trigger TextChangedI again
 -- avoid completion redisplay add a status check
 local disable = nil
-local context = {
-  snippets = {},
-}
+local context = {}
 
 local function context_init(bufnr, id)
   context[bufnr] = {
@@ -292,7 +290,6 @@ local function complete_ondone(bufnr)
           then
             extra = 1
           end
-
           api.nvim_buf_set_text(
             bufnr,
             lnum - 1,
@@ -301,7 +298,6 @@ local function complete_ondone(bufnr)
             startidx + #item.word + extra,
             { '' }
           )
-
           range['end'].character = api.nvim_win_get_cursor(0)[2]
           util.apply_text_edits({ cp_item.textEdit }, bufnr, client.offset_encoding)
           api.nvim_win_set_cursor(
@@ -318,16 +314,17 @@ local function complete_ondone(bufnr)
       end
 
       if offset_snip then
-        offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
+        offset_snip = offset_snip:sub(col - startidx + 1)
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
       end
+      context[args.buf] = nil
       event_delete('CompleteChanged', args.buf)
       if signature then
         local clients =
           vim.lsp.get_clients({ bufnr = args.buf, method = ms.textDocument_signatureHelp })
-        if not clients or #clients == 0 then
+        if #clients == 0 then
           return
         end
         if
@@ -441,9 +438,7 @@ local function completion_handler(_, result, ctx)
   table.sort(entrys, function(a, b)
     return a.score < b.score
   end)
-
-  local mode = api.nvim_get_mode()['mode']
-  if mode == 'i' or mode == 'ic' then
+  if vim.startswith(api.nvim_get_mode().mode, 'i') then
     vfn.complete(startcol, entrys)
     if
       vim.tbl_contains(vim.opt.completeopt:get(), 'popup')
@@ -451,7 +446,6 @@ local function completion_handler(_, result, ctx)
     then
       complete_changed(ctx.bufnr)
     end
-
     if not event_has_created('CompleteDone', ctx.bufnr) then
       complete_ondone(ctx.bufnr)
     end
