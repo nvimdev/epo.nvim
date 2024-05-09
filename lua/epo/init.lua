@@ -314,7 +314,7 @@ local function complete_ondone(bufnr)
       end
 
       if offset_snip then
-        offset_snip = offset_snip:sub(col - startidx + 1)
+        offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
