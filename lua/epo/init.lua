@@ -72,8 +72,9 @@ local function make_valid_word(str_arg)
   if valid == nil or valid == '' then
     return str
   end
-  if string.match(valid, ':$') then
-    return string.sub(valid, 1, -3)
+  local spos = valid:find('%$')
+  if spos then
+    return string.sub(valid, 1, spos - 1)
   end
   return valid
 end
