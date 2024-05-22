@@ -121,8 +121,11 @@ local function show_info(bufnr, curitem, selected)
     popup_markdown_set(wininfo)
     return
   end
-
-  local client = lsp.get_clients({ id = context[bufnr].client_id })[1]
+  local clients = lsp.get_clients({ id = context[bufnr].client_id })
+  if #clients == 0 then
+    return
+  end
+  local client = clients[1]
   client.request(ms.completionItem_resolve, param, function(_, result)
     local data = vim.fn.complete_info()
     if
