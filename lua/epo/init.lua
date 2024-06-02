@@ -105,6 +105,11 @@ local function popup_markdown_set(wininfo)
   vim.wo[wininfo.winid].conceallevel = 2
   vim.wo[wininfo.winid].concealcursor = 'niv'
   vim.treesitter.start(wininfo.bufnr, 'markdown')
+  if #api.nvim_win_get_config(0).relative > 0 then
+    local config = api.nvim_win_get_config(wininfo.winid)
+    config.zindex = 999
+    api.nvim_win_set_config(wininfo.winid, config)
+  end
 end
 
 local function show_info(bufnr, curitem, selected)
