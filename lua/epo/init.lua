@@ -322,6 +322,15 @@ local function complete_ondone(bufnr)
         util.apply_text_edits(cp_item.additionalTextEdits, bufnr, client.offset_encoding)
       end
 
+      if vim.bo[args.buf].filetype == 'rust' and vim.tbl_get(cp_item, 'data', 'imports') then
+        for _, import in ipairs(cp_item.data.imports) do
+          if import.full_import_path then
+            local full = ('use %s;'):format(import.full_import_path)
+            api.nvim_buf_set_lines(args.buf, 0, 0, false, { full, '' })
+          end
+        end
+      end
+
       if offset_snip then
         offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
         if #offset_snip > 0 then
