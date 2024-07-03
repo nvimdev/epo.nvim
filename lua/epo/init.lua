@@ -332,7 +332,7 @@ local function complete_ondone(bufnr)
       end
 
       if offset_snip then
-        offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
+        api.nvim_buf_set_text(bufnr, lnum - 1, startidx, lnum - 1, startidx + #item.word, { '' })
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
@@ -402,7 +402,7 @@ local function completion_handler(_, result, ctx)
       },
     }
 
-    local textEdit = vim.tbl_get(item, 'textEdit')
+    local textEdit = item.kind ~= 15 and vim.tbl_get(item, 'textEdit') or nil
     if textEdit then
       local start_col = #prefix ~= 0 and vfn.charidx(before_text, start_idx) + 1 or col
       local range
