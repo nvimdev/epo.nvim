@@ -114,6 +114,16 @@ end
 
 local function show_info(bufnr, curitem, selected)
   local param = vim.tbl_get(curitem, 'user_data', 'nvim', 'lsp', 'completion_item')
+  -- Preview the emmet abbreviations
+  if param and param.detail == 'Emmet Abbreviation' then
+    local data = vim.fn.complete_info()
+    local wininfo = {
+      winid = data.preview_winid,
+      bufnr = data.preview_bufnr,
+    }
+    popup_markdown_set(wininfo)
+    return
+  end
   -- snippet preview in info
   if curitem.kind == 's' then
     local lang = vim.treesitter.language.get_lang(vim.bo[bufnr].filetype)
@@ -332,7 +342,13 @@ local function complete_ondone(bufnr)
       end
 
       if offset_snip then
-        offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
+        if cp_item.detail == 'Emmet Abbreviation' then
+          -- Remove the label from the completion item
+          local startrow = lnum - 1
+          api.nvim_buf_set_text(bufnr, startrow, startidx, startrow, startidx + #item.word, { '' })
+        else
+          offset_snip = offset_snip:sub(col - context[args.buf].startidx + 1)
+        end
         if #offset_snip > 0 then
           vim.snippet.expand(offset_snip)
         end
@@ -386,6 +402,7 @@ local function completion_handler(_, result, ctx)
   local startcol = start_idx + 1
   prefix = prefix:lower()
 
+  local lang = vim.treesitter.language.get_lang(vim.bo[ctx.bufnr].filetype)
   for _, item in ipairs(compitems) do
     local entry = {
       abbr = item.label,
@@ -404,19 +421,28 @@ local function completion_handler(_, result, ctx)
 
     local textEdit = vim.tbl_get(item, 'textEdit')
     if textEdit then
-      local start_col = #prefix ~= 0 and vfn.charidx(before_text, start_idx) + 1 or col
-      local range
-      if textEdit.range then
-        range = textEdit.range
-      elseif textEdit.insert then
-        range = textEdit.insert
-      end
-      local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
-      if te_startcol ~= start_col then
-        local extra = start_idx - te_startcol
-        entry.word = textEdit.newText:sub(start_col - te_startcol + extra)
+      if item.detail == 'Emmet Abbreviation' then
+        entry.word = item.label
+        -- Try overwrite the start index in the case to use
+        -- completions items with no word characters like > or :
+        start_idx = textEdit.range['start'].character
+        startcol = start_idx + 1
+        context[ctx.bufnr].startidx = start_idx
       else
-        entry.word = textEdit.newText
+        local start_col = #prefix ~= 0 and vfn.charidx(before_text, start_idx) + 1 or col
+        local range
+        if textEdit.range then
+          range = textEdit.range
+        elseif textEdit.insert then
+          range = textEdit.insert
+        end
+        local te_startcol = charidx_without_comp(ctx.bufnr, range.start)
+        if te_startcol ~= start_col then
+          local extra = start_idx - te_startcol
+          entry.word = textEdit.newText:sub(start_col - te_startcol + extra)
+        else
+          entry.word = textEdit.newText
+        end
       end
     elseif vim.tbl_get(item, 'insertText') then
       entry.word = item.insertText
@@ -445,7 +471,12 @@ local function completion_handler(_, result, ctx)
       end
 
       if item.documentation and #item.documentation > 0 then
-        entry.info = item.info
+        -- Expand the information about the Emmet abbreviation
+        if item.detail == 'Emmet Abbreviation' then
+          entry.info = item.detail .. '\n```' .. lang .. '\n' .. item.documentation .. '\n```'
+        else
+          entry.info = item.info
+        end
       end
 
       entry.score = item.sortText or item.label
@@ -463,6 +494,20 @@ local function completion_handler(_, result, ctx)
       and not event_has_created('CompleteChanged', ctx.bufnr)
     then
       complete_changed(ctx.bufnr)
+      -- fix if to show the info if the noselect is not set in
+      -- menuoptions
+      local completeopts = vim.opt_local.completeopt:get()
+      if not vim.tbl_contains(completeopts, 'noselect') then
+        -- show info cause the first item is selected
+        if #entrys > 0 then
+          timer_remove(info_timer)
+          local citem = entrys[1]
+          local data = vim.fn.complete_info()
+          info_timer = timer_create(100, function()
+            show_info(ctx.bufnr, citem, data.selected)
+          end)
+        end
+      end
     end
     if not event_has_created('CompleteDone', ctx.bufnr) then
       complete_ondone(ctx.bufnr)
@@ -482,41 +527,64 @@ local function debounce(client, bufnr, triggerKind, triggerChar)
   end)
 end
 
+-- Aux Function for manage completion
+local function call_completion(bufnr, client)
+  if disable or vim.fn.pumvisible() == 1 then
+    disable = false
+    return
+  end
+  local col = vfn.charcol('.')
+  local line = api.nvim_get_current_line()
+  if col == 0 or #line == 0 then
+    return
+  end
+  local triggerKind = lsp.protocol.CompletionTriggerKind.Invoked
+  local triggerChar = ''
+  local char = line:sub(col - 1, col - 1)
+  local ok, val = pcall(api.nvim_eval, ([['%s' !~ '\k']]):format(char))
+  if not ok then
+    return
+  end
+
+  if val ~= 0 then
+    local triggerCharacters = client.server_capabilities.completionProvider.triggerCharacters or {}
+    if not vim.tbl_contains(triggerCharacters, char) then
+      return
+    end
+    triggerKind = lsp.protocol.CompletionTriggerKind.TriggerCharacter
+    triggerChar = char
+  end
+
+  if not context[bufnr] then
+    context_init(bufnr, client.id)
+  end
+  debounce(client, bufnr, triggerKind, triggerChar)
+end
+
+-- Function to trigger autocompletion manually
+local function complete()
+  local bufnr = vim.fn.bufnr()
+  local ctx = context[bufnr]
+  if not ctx then
+    return
+  end
+  local client_id = vim.tbl_get(ctx, 'client_id')
+  if not client_id then
+    return
+  end
+  local client = vim.lsp.get_client_by_id(client_id)
+  if not client then
+    return
+  end
+  call_completion(bufnr, client)
+end
+
 local function auto_complete(client, bufnr)
   au('TextChangedI', {
     group = group,
     buffer = bufnr,
     callback = function(args)
-      if disable or vim.fn.pumvisible() == 1 then
-        disable = false
-        return
-      end
-      local col = vfn.charcol('.')
-      local line = api.nvim_get_current_line()
-      if col == 0 or #line == 0 then
-        return
-      end
-      local triggerKind = lsp.protocol.CompletionTriggerKind.Invoked
-      local triggerChar = ''
-      local char = line:sub(col - 1, col - 1)
-      local ok, val = pcall(api.nvim_eval, ([['%s' !~ '\k']]):format(char))
-      if not ok then
-        return
-      end
-
-      if val ~= 0 then
-        local triggerCharacters = client.server_capabilities.completionProvider.triggerCharacters
-          or {}
-        if not vim.tbl_contains(triggerCharacters, char) then
-          return
-        end
-        triggerKind = lsp.protocol.CompletionTriggerKind.TriggerCharacter
-        triggerChar = char
-      end
-      if not context[args.buf] then
-        context_init(args.buf, client.id)
-      end
-      debounce(client, args.buf, triggerKind, triggerChar)
+      call_completion(args.buf, client)
     end,
   })
 end
@@ -591,4 +659,5 @@ return {
   setup = setup,
   register_cap = register_cap,
   disable_trigger = disable_trigger,
+  complete = complete,
 }
